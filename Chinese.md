@@ -19,11 +19,26 @@
  4. 安装Linux/Windows 需要 > 512Mb的内存
 
 **自动安装的操作系统?**
- - Linux
- - FreeBSD
- - pFsense
- - ALOHA
- - Windows
+ - **Linux**
+ 1. Ubuntu(18.04) 
+ 2. Centos(8.0) 
+ 3. Debian(10.2)
+ 4.  Archlinux(201912)
+ - **FreeBSD** 
+ 1. FreeBSD(12.1)
+ 2. FreeBSD(12.2)
+ - **pFsense**
+ 1.  pfSense(2.4.4-p3)
+ 2. pfSense(2.4.5-p1)
+ - **ALOHA**
+1. ALOHA Public (11.5)
+ - **Windows**
+ 1.  Server-2003-R2(X86-Ent)
+ 2. Windows-XP-SP3(X86-Pro)
+ 3. Server-2008-R2(X64-Std)
+ 4. Windows-7(X64-Pro)
+ 5. Server-2019-1809(X64-Std)
+ 6. Windows-10-1909(X64-Work)
 
 **如何使用?**
 reBSD支持从任意操作系统上切换到reBSD,它无需繁琐的设置,只需要执行一个shell即可.

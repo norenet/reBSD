@@ -63,7 +63,7 @@
 ## Precautions
  1. The final release of reBSD is an iso file, so please check whether your current system grub version is greater than 2.
  2. Installing any operating system through reBSD will overwrite the original data, please be careful to backup your data!
- 3. The currently tested operating system: Ubuntu> 18.4 / FreeBSD> 11 / Windows> 10
+ 3. The currently tested operating system: Ubuntu > 18.4 / FreeBSD > 11 / Windows > 7
  4. Cloud platforms that have passed the test: KVM / XEN
 
 

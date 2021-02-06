@@ -3,11 +3,12 @@
 
 ## **Preview**
 **Shell**
-![Shell](https://github.com/norenet/reBSD/blob/master/shell.gif)
+![Shell](https://github.com/norenet/reBSD/raw/master/shell.gif)
 **reBSD**
-![reBSD](https://github.com/norenet/reBSD/blob/master/reBSD.gif)
+![reBSD](https://github.com/norenet/reBSD/raw/master/reBSD.gif)
 
-**the document translate by google**
+
+**the document translate by google translate**
 ## **What is reBSD?**
  - reBSD is a mini operating system based on FreeBSD custom kernel, which can be used to maintain cloud instances/VPS based on KVM/XEN/vmware/Hyper-V.
  - It is mainly used to maintain some of my VPS. I like the FreeBSD kernel very much, but most cloud platforms do not provide FreeBSD or pFsense operating systems

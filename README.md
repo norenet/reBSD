@@ -17,11 +17,11 @@
  4. Installing Linux/Windows requires> 512Mb of RAM
 
 **Auto-installed operating system?**
- -Linux
- -FreeBSD
- -pFsense
- -ALOHA
- -Windows
+ - Linux
+ - FreeBSD
+ - pFsense
+ - ALOHA
+ - Windows
 
 **how to use?**
 reBSD supports switching to reBSD from any operating system. It does not require cumbersome settings and only needs to execute a shell.

@@ -6,6 +6,8 @@
  - It is mainly used to maintain some of my VPS. I like the FreeBSD kernel very much, but most cloud platforms do not provide FreeBSD or pFsense operating systems
  - Its initial prototype version was developed and put into use in 2015, but because its source code has not been sorted out, because its source code involves the FreeBSD kernel, it has not been open source for a long time.
  - reBSD does not support third-party scripts for the time being. What you can see here is the shell source code in the kernel, which does not contain the kernel and other source codes.
+ 
+![Shell](https://github.com/norenet/reBSD/blob/master/shell.gif)
 
 **Features?**
  1. Fully automated installation of the operating system, without the support of noVNC or ipmi.

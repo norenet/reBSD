@@ -1,0 +1,311 @@
+@set @tmpvar=1 /*
+@echo off
+echo reBSD init core v2020(based windows 7 ~ 10)
+icacls "%windir%\system32\config\system" >nul 2>&1
+if [%errorlevel%] neq [0] (
+powershell  -c "Start-Process \"%0\" -Verb RunAs"
+exit
+)
+setlocal EnableDelayedExpansion
+set "NICs=%temp%\NICs"
+echo.>%NICs%
+call :wmic nicconfig where "IPEnabled=TRUE and IPConnectionMetric>0" get Index^^,ipaddress^^,IPSubnet^^,macaddress^^,defaultipgateway^^,GatewayCostMetric^^,DNSServerSearchOrder^^,DHCPEnabled /format:list
+exit /b
+
+:wmic
+set /a line=-1
+set "defsrc="
+for /f "delims=" %%A in ('wmic %*') do for /f "tokens=1,2 delims==" %%B in ("%%A") do (
+	call :checks %%B
+	echo %%B_!line!=%%C>>%NICs%
+	)
+echo NICs_Def=!defsrc:~0,-1!>>%NICs%
+endlocal
+call :loader
+exit /b
+
+:checks
+set "cks=%1"
+if "%cks%"=="DefaultIPGateway" (
+	set /a line+=1
+	)
+if "%cks%"=="DefaultIPGateway" (
+	set "defsrc=%defsrc%%line% "
+	)
+goto :eof
+
+:loader
+set "WKDIR=%SystemDrive%\reBSD"
+IF not exist %WKDIR% (mkdir %WKDIR% 2> NUL)
+set "LOADCFG=%WKDIR%\loader_conf"
+if not exist "%NICs%" call :error "loader_conf file not exist!"
+set "mirror=http://rebsd.nore.net/reBSD"
+setlocal EnableDelayedExpansion
+::config
+set "hostname=reBSD"
+set "ssh_port=65022"
+set "rootpw=reBSD@123456"
+set "autodhcp=NO"
+set "auto_script=NO"
+::gen conf file.
+echo rebsd.hostname=%hostname%>%LOADCFG%
+echo rebsd.auto_sshd_port=%ssh_port%>>%LOADCFG%
+echo rebsd.rootpw=%rootpw%>>%LOADCFG%
+echo rebsd.auto_script=%auto_script%>>%LOADCFG%
+call :network
+endlocal
+call :download
+call :grub
+del /f /q %NICs%
+pause
+exit
+
+:network
+set "mac_interfaces="
+set defaultrouter=""
+set "dnsnames="
+set "eth="
+set "inet_eth="
+for /f "delims=" %%a in ('type "%NICs%"') do set "%%a"
+for %%d in (%NICs_Def%) do (
+::def 1
+for /f delims^=^"^ tokens^=2 %%b in ('echo !DefaultIPGateway_%%d!') do (
+if "!GatewayCostMetric_%%d!" == "{0}" (
+set "defaultrouter=%%b"
+for /f delims^=^"^ tokens^=2 %%x in ('echo !DNSServerSearchOrder_%%d!') do set dnsnames=%%x
+set inet_eth=eth%%d
+) else if !defaultrouter! == "" (
+set "defaultrouter=%%b"
+for /f delims^=^"^ tokens^=2 %%x in ('echo !DNSServerSearchOrder_%%d!') do set dnsnames=%%x
+set inet_eth=eth%%d
+)
+)
+::mask_sub
+for /f "tokens=2* delims==" %%m in ('wmic nic where "MACaddress='!MACAddress_%%d!'" get NetConnectionID /value ^| findstr "NetConnectionID"') do (
+for /f "tokens=1,2* delims=:" %%a in ('netsh interface ipv4 show addr "%%m" ^| findstr /C:"/" /C:"(" /C:")"') do (
+for /f "tokens=2 delims=/" %%a in ("%%b") do for /f "tokens=1 delims=(" %%b in ("%%a") do set "Subnet=%%b" 
+)
+)
+::nic_conf
+echo rebsd.ifconfig_eth%%d_mac=!MACAddress_%%d!>>%LOADCFG%
+if !DHCPEnabled_%%d! == TRUE (echo rebsd.ifconfig_eth%%d=dhcp>>%LOADCFG%) else (
+for /f delims^=^"^ tokens^=2 %%x in ('echo !IPAddress_%%d!') do echo rebsd.ifconfig_eth%%d=inet %%x/!Subnet:~0,-1!>>%LOADCFG%
+)
+::for /f delims^=^"^ tokens^=2 %%x in ('echo !IPSubnet_%%d!') do echo rebsd.ifconfig_eth%%d_mask=%%x>>%LOADCFG%
+set eth=!eth!eth%%d 
+)
+echo rebsd.defaultrouter=!defaultrouter!>>%LOADCFG%
+echo rebsd.mac_interfaces=!!eth:~0,-1!!>>%LOADCFG%
+echo rebsd.inet_interfaces=!!inet_eth!!>>%LOADCFG%
+echo rebsd.nameservers=8.8.8.8 !!dnsnames!!>>%LOADCFG%
+goto :eof
+
+:grub
+for /f "tokens=2 delims={}" %%i in ('bcdedit') do set "_GUID=%%i"
+set "reID=6673f1f2"
+set "guid={%reID%%_GUID:~8%}"
+for /f "tokens=1,* delims= " %%x in ('bcdedit /enum "%guid%" ^| findstr /C:"reBSD"') do (
+::bcdedit /delete "%guid%" /cleanup
+echo add reBSD to next boot
+bcdedit /bootsequence %guid% /addfirst >NUL 2>NUL
+goto :gurb_done
+)
+call :add_grub
+
+:gurb_done
+echo grub finsh.
+goto :eof
+
+:add_grub
+echo added grub.
+::for /f "tokens=2 delims={}" %%g in ('bcdedit /create /application bootsector') do set guid={%%g}
+bcdedit /create %guid% /d "reBSD" /application bootsector >NUL 2>NUL
+bcdedit /set %guid% device partition=%SystemDrive% >NUL 2>NUL
+::{6673f1f2-695e-11e9-8ca9-e0a9b70d06b8}
+bcdedit /set %guid% path \reBSD\grub.mbr >NUL 2>NUL
+::bcdedit /set %guid% description "reBSD" >NUL 2>NUL
+bcdedit /displayorder %guid% /addlast >NUL 2>NUL
+bcdedit /bootsequence %guid% /addfirst >NUL 2>NUL
+goto :eof
+
+:download
+::grub
+echo download grub files...
+if exist "%SystemDrive%\BSD0" (
+call :down_jscore GRUB_Hashsum "%mirror%/Files/shell/core/windows/BSD0.sha1" "%temp%\BSD0.sha1"
+goto :check_grub
+)
+
+:grub_core
+call :down_jscore GRUB_Hashsum "%mirror%/Files/shell/core/windows/BSD0.sha1" "%temp%\BSD0.sha1"
+call :down_jscore reBSD_Grub "%mirror%/Files/shell/core/windows/BSD0" "%SystemDrive%\BSD0"
+:check_grub
+set /p GSHA1=<%temp%\BSD0.sha1
+call :sha1_sum %SystemDrive%\BSD0 sha1
+if "%sha1%" equ "%GSHA1%" (
+      echo GrubCore SHA1 identical!
+) else (
+	  echo GrubCore SHA1 does not match.
+      goto :grub_core
+)
+::mbr
+echo download mbr files...
+if exist "%WKDIR%\grub.mbr" (
+call :down_jscore MBR_Hashsum "%mirror%/Files/shell/core/windows/grub.mbr.sha1" "%temp%\grub.mbr.sha1"
+goto :check_mbr
+)
+:mbr_core
+call :down_jscore MBR_Hashsum "%mirror%/Files/shell/core/windows/grub.mbr.sha1" "%temp%\grub.mbr.sha1"
+call :down_jscore reBSD_MBR "%mirror%/Files/shell/core/windows/grub.mbr" "%WKDIR%\grub.mbr"
+:check_mbr
+set /p MSHA1=<%temp%\grub.mbr.sha1
+call :sha1_sum %WKDIR%\grub.mbr sha1
+if "%sha1%" equ "%MSHA1%" (
+      echo MBR SHA1 identical!
+) else (
+	  echo MBR SHA1 does not match.
+      goto :mbr_core
+)
+::rebsd
+echo download reBSD files...
+if exist "%WKDIR%\reBSD.iso" (
+call :down_jscore reBSD_Hashsum "%mirror%/Files/iso/reBSD-latest-RELEASE-amd64-WIN.iso.sha1" "%temp%\reBSD.sha1"
+goto :check_sum
+)
+:core_file
+call :down_jscore reBSD_Hashsum "%mirror%/Files/iso/reBSD-latest-RELEASE-amd64-WIN.iso.sha1" "%temp%\reBSD.sha1"
+call :down_jscore reBSD_Core "%mirror%/Files/iso/reBSD-latest-RELEASE-amd64-WIN.iso" "%WKDIR%\reBSD.iso"
+:check_sum
+set /p RSHA1=<%temp%\reBSD.sha1
+call :sha1_sum %WKDIR%\reBSD.iso sha1
+if "%sha1%" equ "%RSHA1%" (
+      echo reBSD SHA1 identical!
+) else (
+	  echo reBSD SHA1 does not match.
+      goto :core_file
+)
+goto :eof
+
+:down_core
+setlocal
+set "t=%1"
+set "d=%2"
+set "s=%3"
+echo downloading %t%...
+:try_again
+%WINDIR%\System32\WindowsPowerShell\v1.0\powershell -NoProfile -ExecutionPolicy Bypass -Command "$client = New-Object System.Net.WebClient; if (Test-Path env:HTTP_PROXY) { $client.Proxy = New-Object System.Net.WebProxy $env:HTTP_PROXY }; $client.DownloadFile('%d%', '%s%')" 1>NUL
+if [%errorlevel%] neq [0] (
+echo Download file error,try a again next time!
+@ping 127.0.0.1 -n 5 -w 1000 > nul
+goto :try_again
+)
+endlocal
+goto :eof
+
+:sha1_sum
+setlocal enableDelayedExpansion
+if "%~1" equ "" (
+	echo no file passed
+	exit /b 1
+)
+if not exist "%~1" (
+	echo file %~1 does not exist
+	exit /b 2
+)
+if exist "%~1\" (
+	echo %~1 is a directory
+	exit /b 3
+)
+for %%# in (certutil.exe) do (
+	if not exist "%%~f$PATH:#" (
+		echo no certutil installed
+		echo for Windows XP professional and Windows 2003
+		echo you need Windows Server 2003 Administration Tools Pack
+		echo https://www.microsoft.com/en-us/download/details.aspx?id=3725
+		exit /b 4
+	)
+)
+set "sha1="
+for /f "skip=1 tokens=* delims=" %%# in ('certutil -hashfile "%~f1" SHA1') do (
+	if not defined sha1 (
+		for %%Z in (%%#) do set "sha1=!sha1!%%Z"
+	)
+)
+if "%~2" neq "" (
+	endlocal && (
+		set "%~2=%sha1%"
+	) 
+) else (
+	echo %sha1%
+)
+endlocal
+goto :eof
+
+:reboot
+shutdown -r -t 10
+goto :eof
+
+:error
+echo [Error]: %1%2&&pause
+goto :eof
+
+:down_jscore
+set "t=%1"
+set "d=%2"
+set "s=%3"
+echo downloading %t%...
+:jstry_again
+call :jsdownload "%d%" "" "%s%"
+if [%errorlevel%] neq [0] (
+echo Download file error,try a again next time!
+@ping 127.0.0.1 -n 5 -w 1000 > nul
+goto :jstry_again
+)
+goto :eof
+
+
+:jsdownload
+cscript /nologo /e:jscript "%~f0" %*
+exit /b %ERRORLEVEL%
+*/
+function getFileName(uri) {
+    var re = /\/([^?/]+)(?:\?.+)?$/;
+    var match = re.exec(uri);
+    return match != null ? match[1] : "output";
+}
+try {
+    var Source = WScript.Arguments.Item(0);
+    var Proxy  = WScript.Arguments.Length > 1 ? WScript.Arguments.Item(1) : "";
+    var Target = WScript.Arguments.Length > 2 ? WScript.Arguments.Item(2) : getFileName(Source);
+    var Object = WScript.CreateObject('MSXML2.ServerXMLHTTP');
+    if (Proxy.length > 0) {
+        Object.setProxy(2/*SXH_PROXY_SET_PROXY*/, Proxy, "");
+    }
+    Object.open('GET', Source, false);
+    Object.send();
+    if (Object.status != 200) {
+        WScript.Echo('Error:' + Object.status);
+        WScript.Echo(Object.statusText);
+        WScript.Quit(1);
+    }
+    var File = WScript.CreateObject('Scripting.FileSystemObject');
+    if (File.FileExists(Target)) {
+        File.DeleteFile(Target);
+    }
+    var Stream = WScript.CreateObject('ADODB.Stream');
+    Stream.Open();
+    Stream.Type = 1/*adTypeBinary*/;
+    Stream.Write(Object.responseBody);
+    Stream.Position = 0;
+    Stream.SaveToFile(Target, 2/*adSaveCreateOverWrite*/);
+    Stream.Close();
+
+} catch (e) {
+    WScript.Echo("--------------------");
+    WScript.Echo("Error " + (e.number & 0xFFFF) + "\r\n  " + e.description.replace(/[\r\n]*$/, "\r\n"));
+    for (var i = 0; i < WScript.Arguments.length; ++i) {
+        WScript.Echo("  arg" + (i+1) + ": " + WScript.Arguments(i));
+    }
+    WScript.Echo("--------------------");
+    WScript.Quit(1);
+}

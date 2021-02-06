@@ -7,6 +7,7 @@
 **reBSD**
 ![reBSD](https://github.com/norenet/reBSD/raw/master/reBSD.gif)
 
+**the document translate by google translate**
 
 ## **What is reBSD?**
  - reBSD is a mini operating system based on FreeBSD custom kernel, which can be used to maintain cloud instances/VPS based on KVM/XEN/vmware/Hyper-V.

@@ -1,11 +1,11 @@
+## **Language**
+ - [**简体中文**](https://github.com/norenet/reBSD/blob/master/Chinese.md)
+
 ## **Preview**
 **Shell**
 ![Shell](https://github.com/norenet/reBSD/blob/master/shell.gif)
 **reBSD**
 ![reBSD](https://github.com/norenet/reBSD/blob/master/reBSD.gif)
-
-## **Language**
- - [**简体中文**](https://github.com/norenet/reBSD/blob/master/Chinese.md)
 
 **the document translate by google**
 ## **What is reBSD?**

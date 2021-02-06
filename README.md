@@ -80,10 +80,10 @@
 
 ## reBSD licenses
 **reBSD open source components licences are available for consultation at :**
- - BSD         : http://opensource.org/licenses/bsd-license.html LGPL
- - v2.1   		: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html GPL
- - v2      		: http://www.gnu.org/licenses/old-licenses/gpl-2.0.html GPL
- - v3      		: http://www.gnu.org/copyleft/gpl.html zlib/libpng :
+ - BSD         : http://opensource.org/licenses/bsd-license.html
+ - LGPL v2.1 		: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+ - GPL v2    		: http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+ - GPL v3    		: http://www.gnu.org/copyleft/gpl.html
  - zlib    		:http://opensource.org/licenses/zlib-license.html
  
 **reBSD used open source components  are available for consultation at:**

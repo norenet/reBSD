@@ -10,7 +10,7 @@
  3. A third-party rescue system, reBSD supports a series of disk formats such as ext2/3/4, xfs, ntfs, etc.
  4. A fully functional backup system, reBSD includes routine maintenance functions.
 
-**demand**
+**Requirement**
  1. Disk: 20Mb
  2. Memory: 32Mb
  3. Installing FreeBSD/pFsense requires> 256Mb of RAM

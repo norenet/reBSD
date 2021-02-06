@@ -74,3 +74,6 @@
 
 ## reBSD的参数/API
 **请查阅/boot/Loader.conf**
+
+## reBSD licenses
+** TODO **

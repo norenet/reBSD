@@ -79,4 +79,26 @@
 **Please refer to /boot/Loader.conf**
 
 ## reBSD licenses
-TODO
+**reBSD open source components licences are available for consultation at :**
+ - BSD         : http://opensource.org/licenses/bsd-license.html LGPL
+ - v2.1   		: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html GPL
+ - v2      		: http://www.gnu.org/licenses/old-licenses/gpl-2.0.html GPL
+ - v3      		: http://www.gnu.org/copyleft/gpl.html zlib/libpng :
+ - zlib    		:http://opensource.org/licenses/zlib-license.html
+ 
+**reBSD used open source components  are available for consultation at:**
+**Included:**
+1. FreeBSD 	: https://www.freebsd.org
+2. Dropbear	:https://matt.ucc.asn.au/dropbear/dropbear.html
+3. Screen 		: https://www.gnu.org/software/screen/
+4. nano 		:https://www.nano-editor.org/
+5. cpdup		:https://www.freshports.org/sysutils/cpdup
+**Extras:**
+1. fusefs		:https://github.com/libfuse/libfuse
+2. fusefs-libs	:https://sourceforge.net/projects/fuse/
+3. fusefs-ext2	:https://github.com/alperakcan/fuse-ext2
+4. fusefs-ntfs 	:https://www.tuxera.com/community/open-source-ntfs-3g/
+5. fusefs-squash	:https://github.com/vasi/squashfuse
+6. fusefs-lkl	:https://github.com/lkl/linux/
+7. e2fsprogs	:http://e2fsprogs.sourceforge.net/
+8. libublio		:http://mercurial.creo.hu/repos/libublio

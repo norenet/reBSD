@@ -1,3 +1,6 @@
+## **Language**
+ - [**简体中文**](https://github.com/norenet/reBSD/blob/master/Chinese.md)
+
 ## **What is reBSD?**
  - reBSD is a mini operating system based on FreeBSD's custom kernel. It is mainly used to maintain cloud instances/VPS based on KVM or XEN.
  - It is mainly used to maintain some of my VPS. I like the FreeBSD kernel very much, but most cloud platforms do not provide FreeBSD or pFsense operating systems
@@ -23,9 +26,9 @@
  - ALOHA
  - Windows
 
-**how to use?**
-reBSD supports switching to reBSD from any operating system. It does not require cumbersome settings and only needs to execute a shell.
-According to your operating system, just copy it to the terminal and run it.
+**How to use?**
+- reBSD supports switching to reBSD from any operating system. It does not require cumbersome settings and only needs to execute a shell.
+- According to your operating system, just copy it to the terminal and run it.
 
 > #linux
 

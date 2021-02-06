@@ -76,3 +76,6 @@
 
 ## reBSD parameters/API
 **Please refer to /boot/Loader.conf**
+
+## reBSD licenses
+TODO

@@ -1,0 +1,133 @@
+#!/bin/sh
+# ----------------
+# reBSD initial scripts
+# ----------------
+# make sure the user can't kill us by pressing Ctrl-C,
+# ctrl-z, etc.
+trap : 2
+trap : 3
+trap : 4
+# Parse command line parameters
+while [ $# -gt 0 ]; do
+	case $1 in
+		-c )	shift
+			sh -c $1
+			exit
+			;;
+		* )
+	esac
+	shift
+done
+# endless loop
+while : ; do
+
+if [ -f /tmp/ttybug ]; then
+	rm /tmp/ttybug
+	exit && exit && logout
+fi
+
+umount_all(){
+for umount in `/sbin/mount -l | grep -E "${firstDisk}|fuse|mnt" | sort -V -r | awk '{print $3}'`; do
+echo "uMount: ${umount}"
+/sbin/umount -f $umount
+[ $? -ne 0 ] && echo "umount error,try reinstall." && exit 1
+/sbin/mount -a
+done
+echo -e "\033[1;32muMount all is done.\033[0m"
+echo "--------------------------------------------"
+}
+
+reboots(){
+/usr/local/bin/screen -ls | grep -q "installer" && echo -e "\033[1;35m Another installation is already in progress\033[0m" && echo ""
+firstDisk=$(/sbin/sysctl -n kern.disks |tr " " "|")
+if /sbin/mount -l | grep -E "${firstDisk}|fuse|mnt" >/dev/null ;then
+echo -e "\033[1;31mPlease uMount \"${firstDisk}\" mount.\033[0m"
+printf '%s' "-> Do you want to auto umount ${firstDisk}?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -gt 1 ] && umount_all || echo
+fi
+printf '%s'  "-> Do you want to reboot now?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -gt 1 ] && /sbin/reboot || echo
+}
+
+inster(){
+# display a cheap menu
+echo -e "\033[1;31m Another installation is already in progress\033[0m"
+echo ""
+echo -e " \033[1;32m0\033[0m) Shell (tcsh)  		\033[1;32m2\033[0m) \033[1;33mAttach to installer shell\033[0m"
+echo -e " \033[1;32m1\033[0m) Reboot system 		\033[1;32m3\033[0m) mount Local file system"
+echo
+read -p "Enter an option: " opmode
+echo
+# see what the user has chosen
+case ${opmode} in
+0)
+	echo -e "Try using: \"\033[1;32mexit\033[0m\" command back to the menu."
+	echo
+	tcsh
+	;;
+1)
+	#reboot
+	reboots 
+	;;
+2)
+	/usr/local/bin/screen -x installer
+	;;
+3)
+	tcsh
+	;;
+esac
+}
+
+
+normal(){
+# display a cheap menu
+kenv -qv rebsd.auto_is_finish | grep -q "YES" && 
+systype=`kenv -q rebsd.auto_script` &&
+echo -e "\033[0;34m Congratulations!  v >_< v \n \033[1;36m${systype} installation is now complete!\033[0m" &&echo ""
+echo -e " \033[1;32m0\033[0m) Shell (tcsh)  		\033[1;32m4\033[0m) Install Windows"
+echo -e " \033[1;32m1\033[0m) Install FreeBSD		\033[1;32m5\033[0m) Install ALOHA"
+echo -e " \033[1;32m2\033[0m) Install pfSense		\033[1;32m6\033[0m) Add reBSD modules"
+echo -e " \033[1;32m3\033[0m) Install Linux		\033[1;32m7\033[0m) Mount Local file system"
+kenv -qv rebsd.auto_is_finish | grep -q "YES" && echo -e " \033[1;32m8\033[0m) \033[1;33mBack to ${systype} on hard drive\033[0m" || echo -e " \033[1;32m8\033[0m) Back to system on hard drive"
+echo
+read -p "Enter an option: " opmode
+echo
+# see what the user has chosen
+case ${opmode} in
+0)
+	echo -e "Try using: \"\033[1;32mexit\033[0m\" command back to the menu."
+	echo
+	tcsh
+	echo
+	;;
+1)
+	/etc/rc.initial.freebsd
+	;;
+2)
+	/etc/rc.initial.pf
+	;;
+3)
+	/etc/rc.initial.linux
+	;;
+4)
+	/etc/rc.initial.win
+	;;
+5)
+	/etc/rc.initial.aloha
+	;;
+6)
+	/etc/rc.initial.modules
+	;;
+7)
+	/etc/rc.initial.mount
+	;;
+8)
+	#nextboot -k GENERIC
+	reboots
+	;;
+esac
+}
+/usr/local/bin/screen -ls | grep -q "installer" && inster ||  normal
+done

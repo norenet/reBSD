@@ -1,0 +1,127 @@
+#!/bin/sh
+# ----------------
+# conf script for centos version >= 8
+# reBSD.nore.net
+# Do not change anything here until you know what you are doing
+# ----------------
+#nmcli con mod enp0s3 connection.autoconnect yes
+source /boot/rebsd_conf
+usermod --password $(echo $rootPass | openssl passwd -1 -stdin) root
+echo $hostname> /etc/hostname
+#grow disk.
+#sysdisk=`/usr/bin/awk '$2 == "/"{print $1}' /proc/self/mounts`
+#bootpart=`fdisk -l | grep '*  ' | cut -d' ' -f1 2>&1`
+sysdisk=`findmnt --target / -o SOURCE -n`
+bootpart=`findmnt --target /boot -o SOURCE -n`
+syspart=`lvs -o +devices | grep root | awk '{print $5}' | cut -d'(' -f1 2>&1`
+disk=`echo $bootpart | tr -d '0-9' `
+totaldisk=`fdisk -l $disk | grep "Disk ${disk}"  |cut -d' ' -f3 2>&1`
+boottotal=`fdisk -l $bootpart | grep "Disk ${bootpart}"  |cut -d' ' -f3 2>&1`
+systotal=`fdisk -l $syspart | grep "Disk ${syspart}"  |cut -d' ' -f3 2>&1`
+let useg=$boottotal+$systotal
+if [ -n $sysdisk ] & [ "$useg" -lt "$totaldisk" ];then
+growpart `echo $syspart | sed -e 's/\([0-9]\+\)/ \1/g'`  > /dev/null 2>&1
+pvresize $syspart
+lvextend -l +100%FREE $sysdisk
+xfs_growfs /
+fi
+
+if [ -n "$autodhcp" ] && [ "$autodhcp" = "YES" ]; then
+_dif=`ls /sys/class/net | grep -v "lo"`
+for if in $_dif; do
+nmcli dev mod $if ipv4.method auto
+nmcli dev mod $if ipv6.method auto
+done
+nmcli con mod $if connection.autoconnect yes
+nmcli con mod $if connection.autoconnect-slaves yes
+nmcli con reload
+#static ip
+else
+for ef in "$mac_interfaces"; do
+	_cmac=`eval echo "\\$ifconfig_${ef}_mac"` 
+	if [ -n "$_cmac" ]; then
+		_dif=`ls /sys/class/net | grep -v "lo"`
+		for if in $_dif; do
+			_mac=`cat /sys/class/net/${if}/address`
+			if [ "$_cmac" = "$_mac" ]; then
+				_cif=`eval echo "\\$ifconfig_${ef}"`
+				if [ -n "$_cif" ]; then
+					nmcli con s $if 2>/dev/null >/dev/null || nmcli con add type ethernet con-name $if ifname $if
+					nmcli con mod $if connection.autoconnect yes
+					nmcli con mod $if connection.autoconnect-slaves yes
+					if [ "$ef" = "$ifconfig_inet_eth" ];then
+						case "$_cif" in
+							dhcp)
+							nmcli dev mod $if ipv4.method auto
+							nmcli dev mod $if ipv6.method auto
+							;;
+							*)
+							nmcli con mod $if ipv4.addresses "$_cif"
+							nmcli con mod $if ipv4.method manual 
+							nmcli con mod $if ipv4.gateway $defaultrouter
+							nmcli con mod $if ipv4.route-metric 0
+							nmcli con mod $if ipv4.dns $dnsnames
+							nmcli con up $if
+							;;
+							esac
+						_setmac="true"
+					else
+						case "$_cif" in
+							dhcp)
+							nmcli dev mod $if ipv4.method auto
+							nmcli dev mod $if ipv6.method auto
+							;;
+							*)
+							nmcli con mod $if ipv4.addresses "$_cif"
+							nmcli con mod $if ipv4.method manual 
+							nmcli con up $if
+							;;
+							esac
+					fi
+					nmcli con reload
+				fi		
+			fi
+		done
+	fi
+done
+
+if [ ! -n "$_setmac" ]; then
+min=$(/bin/ls /sys/class/net | grep -v "lo" | /usr/bin/tr "\t" "\n"|/usr/bin/tr " " "\n"|/usr/bin/sort -n|/usr/bin/uniq|/bin/grep -v "^$"|/usr/bin/head -1)
+_cif=`eval echo "\\$ifconfig_${ifconfig_inet_eth}"`
+nmcli con s $min 2>/dev/null >/dev/null || nmcli con add type ethernet con-name $min ifname $min
+case "$_cif" in
+dhcp)
+nmcli dev mod $min ipv4.method auto
+nmcli dev mod $min ipv6.method auto
+;;
+*)
+echo $min
+nmcli con mod $min ipv4.addresses "$_cif"
+nmcli con mod $min ipv4.method manual 
+nmcli con mod $min ipv4.gateway $defaultrouter
+nmcli con mod $min ipv4.route-metric 0
+nmcli con mod $min ipv4.dns $dnsnames
+nmcli con up $min
+;;
+esac
+nmcli con mod $min connection.autoconnect yes
+nmcli con mod $min connection.autoconnect-slaves yes
+nmcli con reload
+fi
+
+fi
+
+if [ ! "$ssh_port" == "22" ];then
+sed -i "s@.*Port .*@Port $ssh_port@" "/etc/ssh/sshd_config"
+#ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -q -N ''
+#sed -i "s@.*PermitRootLogin .*@PermitRootLogin yes@" "/etc/ssh/sshd_config"
+semanage port -a -t ssh_port_t -p tcp $ssh_port
+systemctl restart sshd
+firewall-cmd --permanent --zone=public --add-port=$ssh_port/tcp
+firewall-cmd --reload
+fi
+sed -i -e '$ d' /etc/rc.d/rc.local
+dracut --force
+rm -f /boot/rebsd_conf
+rm $0
+reboot

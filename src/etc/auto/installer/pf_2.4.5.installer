@@ -1,0 +1,51 @@
+#!/bin/csh
+if ( `df -m /usr | tail -n1 | awk '{print $4}'` < 240 ) then 
+printf "\033[1;31mvery Low available physical memory.\033[0m\n"
+printf "Install FreeBSD need:\033[1;38m 300M\033[0m available memory.\n"
+exit 1
+endif
+
+echo 'Start install pfSense 2.4.4p3(net installer)..'
+setenv mirror `kenv -q rebsd.dist_mirror`
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/FreeBSD/12.2/inc/share_bsdconfig.txz" -qo- | tar  -xJ -C / -f - 
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/pfSense/2.4.5_p1/dist/pf_bsdconfig.txz" -qo- | tar  -xJ -C / -f - 
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/pfSense/2.4.5_p1/dist/pf_bsdinstall.txz" -qo- | tar  -xJ -C / -f - 
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/pfSense/2.4.5_p1/dist/pf_lib.txz" -qo- | tar  -xJ -C / -f - 
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+mkdir /tmp/pfsense-dist > & /dev/null
+setenv TERM vt100 
+setenv DISTRIBUTIONS "base.txz"
+setenv BSDINSTALL_DISTDIR /tmp/pfsense-dist
+setenv BSDINSTALL_DISTSITE "${mirror}/Base/pfSense/2.4.5_p1/dist/"
+fetch --timeout=60 --no-verify-hostname --no-verify-peer -qo /tmp/pfsense-dist/MANIFEST "${mirror}/Base/pfSense/2.4.5_p1/dist/MANIFEST"
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+fetch --timeout=60 --no-verify-hostname --no-verify-peer -o /tmp/pfsense-dist/base.txz "${mirror}/Base/pfSense/2.4.5_p1/dist/base.txz"
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+bsdinstall script /etc/auto/scripts/pf_installer

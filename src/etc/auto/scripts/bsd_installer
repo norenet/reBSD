@@ -1,0 +1,119 @@
+#PARTITIONS=$(/sbin/gpart status | /usr/bin/grep -v -w Name | /usr/bin/awk '{print $3}' | /usr/bin/head -n 1)
+PARTITIONS=$(sysctl -n kern.disks | sed -E 's/[[:<:]](cd|ar)[0-9]+//g' | tr "\t" "\n"|tr " " "\n"|sort -n|uniq|grep -v "^$"|head -1)
+#!/bin/sh
+_dhcp=`/bin/kenv -q rebsd.autodhcp`
+#emac=`/bin/kenv -q rebsd.ifconfig_eth0_mac`
+emIP=`/bin/kenv -q rebsd.ifconfig_eth0`
+_mif=`/bin/kenv -q rebsd.mac_interfaces`
+_inet=`/bin/kenv -q rebsd.inet_interfaces`
+route=`/bin/kenv -q rebsd.defaultrouter`
+dns=`/bin/kenv -q rebsd.nameservers`
+srvname=`/bin/kenv -q rebsd.hostname`
+rootPass=`/bin/kenv -q rebsd.rootpw`
+sshPort=`/bin/kenv -q rebsd.auto_sshd_port`
+_reboot=`/bin/kenv -q rebsd.auto_finish_action`
+_fixrs=`/bin/kenv -q rebsd.fix_route`
+
+
+echo "Installation complete, running in host system"
+# Set up Networking
+ems=`/sbin/ifconfig -l | /usr/bin/sed -E 's/lo[0-9]+//g'`
+if [ -n "$_dhcp" ] && [ "$_dhcp" = "YES" ]; then
+	for i in $ems; do
+		echo "ifconfig_$i=\"DHCP\"" >> /etc/rc.conf
+	done
+	if [ -n "$_fixrs" ] ;then
+		for i in $ems; do
+			_mac=`ifconfig $i | grep ether | awk '{ print $2 }'`
+			_imac=`kenv rebsd.ifconfig_${_inet}_mac`
+			if [ "$_mac" = "$_imac" ]; then
+			echo "static_routes=\"fix\"" >> /etc/rc.conf
+			echo "route_fix=\"-net ${route} -iface ${i}\"" >> /etc/rc.conf
+			echo "defaultrouter=\"$route\"" >> /etc/rc.conf
+			_setrs="true"
+			fi
+		done
+		if [ -z "$_setrs" ] ;then
+		first_eth=$(echo $ems | sed -E 's/[[:<:]](lo)[0-9]+//g' | tr "\t" "\n"|tr " " "\n"|sort -n|uniq|grep -v "^$"|head -1)
+		[ "$first_eth" = "" ] && echo "can't fix host sytem route"
+		echo "static_routes=\"fix\"" >> /etc/rc.conf
+		echo "route_fix=\"-net ${route} -iface ${first_eth}\"" >> /etc/rc.conf
+		echo "defaultrouter=\"$route\"" >> /etc/rc.conf
+		fi
+	fi
+
+else
+for if in ${_mif}; do
+	#_cmac=`eval echo "\\$ifconfig_${if}_mac"`
+	_cmac=`/bin/kenv -q rebsd.ifconfig_${if}_mac`
+	if [ -n "$_cmac" ]; then
+		for i in $ems; do
+			_mac=`/sbin/ifconfig $i | /usr/bin/grep ether | /usr/bin/awk '{ print $2 }'`
+			if [ "$_mac" = "$_cmac" ]; then
+				_cif=`eval echo "\\$ifconfig_${if}"`
+				_imac=`kenv rebsd.ifconfig_${_inet}_mac`
+				[ "$_mac" = "$_imac" ] && _def_eth=$i
+				if [ -n "$_cif" ]; then
+					echo "ifconfig_$i=\"${_cif}\"" >> /etc/rc.conf
+					_setmac="true"
+				fi
+			fi
+		done
+	fi
+done
+
+if [ -z "$_setmac" ]; then
+	_dif=`/sbin/ifconfig -l | /usr/bin/sed -E 's/lo[0-9]+//g'`
+	for i in $_dif; do
+		if [ "$(echo $i | /usr/bin/cut -c $((${#i})))" = "0" ]; then
+			_def_eth=$i
+			echo "ifconfig_$i=\"${emIP}\"" >> /etc/rc.conf
+		fi
+	done
+fi
+echo "defaultrouter=\"${route}\"" >> /etc/rc.conf
+
+			if [ -n "$_fixrs" ] ;then
+				echo "static_routes=\"fix\"" >> /etc/rc.conf
+				echo "route_fix=\"-net ${route} -iface ${_def_eth}\"" >> /etc/rc.conf
+				echo "defaultrouter=\"$route\"" >> /etc/rc.conf
+			fi
+fi
+
+# Set DNS nameservers.
+for n in $dns; do
+	echo "nameserver $n" >> /etc/resolv.conf
+done
+# Set Time Zone
+/bin/cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+/usr/bin/touch /etc/wall_cmos_clock
+/sbin/adjkerntz -a
+/usr/sbin/ntpdate -u 0.pool.ntp.org
+#Set Default Root Password
+echo $rootPass | pw usermod root -h 0
+#Set System
+echo "hostname=\"${srvname}\"" >> /etc/rc.conf
+echo "autoboot_delay=\"3\"" >> /boot/loader.conf
+echo "sendmail_enable=\"NONE\"" >> /etc/rc.conf
+echo "sendmail_msp_queue_enable=\"NO\"" >> /etc/rc.conf
+echo "sendmail_outbound_enable=\"NO\"" >> /etc/rc.conf
+echo "sendmail_submit_enable=\"NO\"" >> /etc/rc.conf
+echo "moused_enable=\"NO\"" >> /etc/rc.conf
+echo "moused_ums0_enable=\"NO\"" >> /etc/rc.conf
+echo "sshd_enable=\"YES\"" >> /etc/rc.conf
+echo "dumpdev=\"NO\"" >> /etc/rc.conf
+echo "Port ${sshPort}" >> /etc/ssh/sshd_config
+echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+#if [ -n "$_reboot" ]; then
+case $_reboot in
+	  reboot)
+		reboot
+		;;
+	shutdown)
+		poweroff
+		;;
+		   *)
+		/bin/kenv -v rebsd.auto_is_finish='YES'>/dev/null
+		echo "reBSD work finsh."
+		;;
+  esac

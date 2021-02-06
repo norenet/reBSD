@@ -1,0 +1,157 @@
+#!/bin/sh -e
+#
+# rc.local
+#
+# ----------------
+# conf script for ubuntu version >= 18.04 
+# reBSD.nore.net
+# Do not change anything here until you know what you are doing
+# ----------------
+
+while read rebsd_val; do eval $rebsd_val; done < /etc/rebsd_conf
+
+createYAML() {
+/bin/cat > /etc/netplan/01-netcfg.yaml <<EOF
+network:
+  version: 2
+  renderer: networkd
+EOF
+}
+
+createDhcpYAML() {
+/bin/cat >> /etc/netplan/01-netcfg.yaml <<EOF
+  ethernets:
+    ${1}:
+      dhcp4: yes
+      dhcp6: yes
+EOF
+}
+
+createStaticYAML() {
+/bin/cat >> /etc/netplan/01-netcfg.yaml <<EOF
+  ethernets:
+    $1:
+      dhcp4: no
+      addresses:
+        - $2
+      gateway4: $3
+      nameservers:
+          addresses: [$4]
+EOF
+if [ -n "$fix_route" ] ;then
+/bin/cat >> /etc/netplan/01-netcfg.yaml <<EOF
+      routes:
+        - to: ${3}/32
+          via: 0.0.0.0
+          scope: link
+EOF
+fi
+}
+
+createLocalYAML() {
+/bin/cat >> /etc/netplan/01-netcfg.yaml <<EOF
+  ethernets:
+    $1:
+      dhcp4: no
+      addresses:
+        - $2
+EOF
+}
+
+#create a YAML for netplan.
+createYAML
+#dhcp
+if [ -n "$autodhcp" ] && [ "$autodhcp" = "YES" ]; then
+_dif=`/bin/ls /sys/class/net | grep -v "lo"`
+for if in $_dif; do
+createDhcpYAML $if;
+done
+#static ip
+else
+for ef in ${mac_interfaces}; do
+	_cmac=`eval echo "\\$ifconfig_${ef}_mac"`
+	if [ -n "$_cmac" ]; then
+		_dif=`/bin/ls /sys/class/net | grep -v "lo"`
+		for if in $_dif; do
+			_mac=`/sbin/ifconfig $if | /bin/grep ether | /usr/bin/awk '{ print $2 }'`
+			if [ "$_cmac" = "$_mac" ]; then
+				_cif=`eval echo "\\$ifconfig_${ef}"`
+				if [ -n "$_cif" ]; then
+					if [ "$ef" = "$ifconfig_inet_eth" ];then
+						case "$_cif" in
+							dhcp)
+							createDhcpYAML $if;
+							;;
+							*)
+							createStaticYAML $if $_cif $defaultrouter $dnsnames;
+							;;
+							esac
+						_setmac="true"
+					else
+						case "$_cif" in
+							dhcp)
+							createDhcpYAML $if;
+							;;
+							*)
+							createLocalYAML $if $_cif;
+							;;
+							esac
+					fi
+					/usr/sbin/netplan apply
+				fi		
+			fi
+		done
+	fi
+done
+#if can't find a mac address or inet mac address has changed.
+#ah,we need to do something to fix this.
+if [ -z "$_setmac" ]; then
+createYAML
+#trying find a eth name by first device
+min=$(/bin/ls /sys/class/net | grep -v "lo" | /usr/bin/tr "\t" "\n"|/usr/bin/tr " " "\n"|/usr/bin/sort -n|/usr/bin/uniq|/bin/grep -v "^$"|/usr/bin/head -1)
+_cif=`eval echo "\\$ifconfig_${ifconfig_inet_eth}"`
+case "$_cif" in
+	dhcp)
+	createDhcpYAML $min;
+	;;
+	*)
+	createStaticYAML $min $_cif $defaultrouter $dnsnames;
+	;;
+	esac
+/usr/sbin/netplan apply
+fi
+fi
+#grow disk.
+rootdev=`findmnt --target / -o SOURCE -n`
+rootdrivename=`lsblk -no pkname $rootdev`
+rootdrive="/dev/"$rootdrivename
+majorminor=`lsblk  $rootdev -o MAJ:MIN | tail -1`
+part_number=${majorminor#*:}
+swapoff -a
+sed -i -e '11,2d;12d' /etc/fstab
+printf "d\n5\nd\n2\nw\n" | fdisk $rootdrive
+printf "R\nWyes\nQ" | cfdisk $rootdrive
+partprobe $rootdrive
+smem="\"-`awk '/MemTotal/ {print $2}' /proc/meminfo`KB\""
+echo yes | parted ---pretend-input-tty $rootdrive resizepart 1 Yes $smem 2>&1 > /dev/null || true
+printf "n\ne\n2\n\n\nn\n\n\nt\n5\n82\nw\n" | fdisk $rootdrive
+resize2fs $rootdev
+echo "RESUME=none">/etc/initramfs-tools/conf.d/resume
+update-initramfs -u
+rm -f /etc/rebsd_conf
+cat <<EOF > $0
+#!/bin/sh -e
+rootdev=\`findmnt --target / -o SOURCE -n\`
+rootdrivename=\`lsblk -no pkname \$rootdev\`
+swapdrive="/dev/"\$rootdrivename"5"
+mkswap \$swapdrive
+swapon \$swapdrive
+sUUID=\`blkid -s UUID -o value \$swapdrive\`
+echo "UUID=\${sUUID} none            swap    sw              0       0">>/etc/fstab
+echo "RESUME=UUID=\${sUUID}">/etc/initramfs-tools/conf.d/resume
+update-initramfs -u
+rm \$0
+exit 0
+EOF
+reboot
+exit 0

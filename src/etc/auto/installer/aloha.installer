@@ -1,0 +1,286 @@
+#!/bin/sh
+# ----------------
+# conf script for ubuntu version >= 18.04 
+# reBSD.nore.net
+# Do not change anything here until you know what you are doing
+# ----------------
+HOME=/
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
+export HOME PATH
+
+cdr2mask ()
+{
+   # Number of args to shift, 255..255, first non-255 byte, zeroes
+   set -- $(( 5 - ($1 / 8) )) 255 255 255 255 $(( (255 << (8 - ($1 % 8))) & 255 )) 0 0 0
+   [ $1 -gt 1 ] && shift $1 || shift
+   echo ${1-0}.${2-0}.${3-0}.${4-0}
+}
+
+firstDisk=$(sysctl -n kern.disks | sed -E 's/[[:<:]](cd|ar)[0-9]+//g' | tr "\t" "\n"|tr " " "\n"|sort -n|uniq|grep -v "^$"|head -1)
+
+if [ `geom disk list $firstDisk | grep Mediasize | awk '{print $2}'` -lt 268435456 ];then 
+echo -e "ALOHA Public Minimum disk space requirements:\033[1;31m 256MB.\033[0m"
+echo -e "Try using:\033[1;38m other linux system.\033[0m"
+read -p "press a key to continue" exit
+exit 1
+fi
+
+if [ `sysctl hw.realmem | awk '{print $2}'` -lt 268435456 ];then 
+echo -e "ALOHA Public Minimum memory requirements:\033[1;31m 256Mb,very Low available physical memory.\033[0m"
+echo -e "Try using:\033[1;38m other linux system.\033[0m"
+printf '%s' "-> (Not recommended)Do you want to continue?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] && exit 1
+fi
+
+umount_all(){
+for umount in `mount -l | grep -E "${firstDisk}|fuse|mnt" | sort -V -r | awk '{print $3}'`; do
+echo "uMount: ${umount}"
+umount -f $umount
+[ $? -ne 0 ] && echo "umount error,try reinstall." && exit 1
+mount -a
+done
+echo -e "\033[1;32muMount all is done.\033[0m"
+echo "--------------------------------------------"
+}
+
+if mount -l | grep -E "${firstDisk}|fuse|mnt" ;then
+echo -e "\033[1;31mPlease uMount \"${firstDisk}\" mount.\033[0m"
+printf '%s' "-> Do you want to auto umount ${firstDisk}?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] &&echo&&exit 1
+umount_all
+fi
+
+echo 'Start install ALOHA Public(net installer)..'
+mirror=`kenv -q rebsd.dist_mirror`
+mirror_aloha=`kenv -q rebsd.dist_ALOHA`
+rootPass=`kenv -q rebsd.rootpw`
+_reboot=`kenv -q rebsd.auto_finish_action`
+
+_inet=`kenv -q rebsd.inet_interfaces`
+_mif=`kenv -q rebsd.mac_interfaces`
+_fixrs=`kenv -q rebsd.fix_route`
+_workdir="/tmp/ALOHA"
+basedir="/mnt"
+drivedev="/dev/${firstDisk}s2"
+#	kenv -q rebsd.dist_mirror="http://www.haproxy.com/download" > /dev/null 
+img_src="${mirror_aloha}/aloha/va-installer/aloha-albva-kvm.tgz"
+mkdir $_workdir >/dev/null
+if [ "$?" != 0 ];then
+rm -rf /tmp/ALOHA/*
+fi
+echo "        Download ALOHA Public img to \"/tmp\""
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${img_src}" -qo- | tar  -xJ -C /tmp/ALOHA -f -
+if [ "$?" != 0 ] ;then
+printf "\033[1;31mDownload ALOHA Public img,Please try again.\033[0m\n"
+exit 1
+fi
+
+_str_img=`find /tmp/ALOHA/ -name "*.img" -print`
+if [ "$_str_img" = "" ] ;then
+printf "\033[1;31mDownload ALOHA Public img,Please try again.\033[0m\n"
+exit 1
+fi
+
+echo "        clone ALOHA Public raw to ${firstDisk}"
+if dd if=${_str_img} of=/dev/${firstDisk} bs=64k status=progress conv=notrunc && sync; then
+#if [ `fstyp -l $drivedev` == "ext2fs" ];then
+if [ "`gpart show -p $firstDisk | grep -E "${firstDisk}s2.*linux-data"`" ];then
+echo "start aloha sysprep."
+mount -t ext2fs $drivedev $basedir
+[ $? -ne 0 ] && echo "mount disk error,try reinstall." && exit 1
+
+_core_img=`find /mnt/ -name "initrd.img" -print`
+if [ "$_core_img" = "" ] ;then
+printf "\033[1;31mCan not find the initrd.img,Please try again.\033[0m\n"
+exit 1
+fi
+#load fusefs
+if ! kldstat -qm fusefs;then
+echo "        Download squash mod ..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/squash.txz" -qo- | tar  -xJ -C / -f -  
+[ $? -ne 0 ] && echo "Download error,try reinstall." && exit 1
+kldload fuse 2> /dev/null && echo "load squash ok" || exit 1
+fi
+_cdr="/tmp/core"
+mkdir $_cdr >/dev/null
+squashfuse $_core_img $_cdr
+#
+config_dir="${_workdir}/etc"
+
+mkdir $config_dir >/dev/null
+cp -pP ${_cdr}/usr/share/factory/base-etc/config.rc $config_dir
+cp -pP ${_cdr}/usr/share/factory/base-etc/shadow $config_dir
+hostname=`kenv -q rebsd.hostname`
+ad_user="admin"
+rtc="local"
+#ALOHA does not enable DNS query by default
+#dns_enable="true"
+dnsnames=`kenv -q rebsd.nameservers`
+#must be slipt the dns names, see bugs.txt #2
+dns_s1=`echo $dnsnames | cut -d " " -f 1`
+dns_s2=`echo $dnsnames | cut -d " " -f 2`
+web_port=`kenv -q rebsd.auto_webd_port`
+ssh_port=`kenv -q rebsd.auto_sshd_port`
+
+rootPass=$(echo `kenv -q rebsd.rootpw` | pw useradd ${ad_user} -h 0 -N | awk -F: '{print $2}')
+#sometimes we can not get the password hash...
+if [ "$rootPass" = "" ];then
+echo generate password hash error.
+echo ALOHA default password: admin
+else
+sed -i '' "s:^$ad_user\:[^\:]*\::$ad_user\:x\::" ${config_dir}/shadow
+sed -i '' "s:^$ad_user\:[^\:]*\::$ad_user\:$rootPass\::" ${config_dir}/shadow
+fi
+
+#set homename
+if [ "$hostname" = "" ];then
+echo ALOHA default hostname: ALOHA1
+else
+sed -i '' '/#/ ! s/hostname.*/hostname '${hostname}'/' $config_dir/config.rc
+fi
+
+if [ "$rtc" = "" ];then
+rtc="utc"
+fi
+#set time zone and enable dns
+if [ "$dns_enable" = true ];then
+sed -i '' '/#/ ! s/rtc.*/rtc '${rtc}'\
+    dns_servers '${dns_s1}' '${dns_s2}'/' $config_dir/config.rc
+else
+sed -i '' '/#/ ! s/rtc.*/rtc '${rtc}'/' $config_dir/config.rc
+fi
+#set ssh port first
+if [ "$ssh_port" = "" ];then
+echo ALOHA default SSH port: 22
+else
+sed -i '' '/#/ ! s/port .*/port '${ssh_port}'/' $config_dir/config.rc
+fi
+#set web port.
+if [ "$web_port" = "" ];then
+echo ALOHA default WEB port: 4444
+else
+sed -i '' '/#/ ! s/bind_port .*/bind_port '${web_port}'/' $config_dir/config.rc
+fi
+#set eth
+#network ideas 
+#we can not use mac address to find the inet nic, because the license of aloha limit to modify the rom file
+#so just sort by nic id, this is not a good way,btw.
+ems=`ifconfig -l | sed -E 's/lo[0-9]+//g'`
+_dhcp=`kenv -q rebsd.autodhcp`
+#emac=`kenv -q rebsd.ifconfig_eth0_mac`
+emIP=`kenv -q rebsd.ifconfig_eth0`
+route=`kenv -q rebsd.defaultrouter`
+#static ip
+	for i in $ems; do
+	_mac=`ifconfig $i | grep ether | awk '{ print $2 }'`
+	_imac=`kenv rebsd.ifconfig_${_inet}_mac`
+		if [ "$_mac" = "$_imac" ]; then
+			eth_num=`echo $i | cut -c $((${#i}))`
+			_config=$(echo $emIP | sed 's/inet *//g')
+			c_ip=`echo $_config | cut -d "/" -f 1`
+			c_mask=`echo $_config | cut -d "/" -f 2`
+			#bug.txt #4, xxx.xxx.xxx.xxx/23 can't use.
+			#c_netmask=`cdr2mask $c_mask`
+			_setmac="true"
+			if [ "$eth_num" = 0 ]; then
+				if [ -n "$_dhcp" ] && [ "$_dhcp" = "YES" ] || [ "$route" = "" ]; then
+					sed -i '' '/lo/ ! s/# Interface.*/Interface eth'${eth_num}'\
+    auto on
+    ip autoconfig/' $config_dir/config.rc
+				else
+					sed -i '' '/lo/ ! s/# Interface.*/Interface eth'${eth_num}'\
+    ip   address '${c_ip}'\/'${c_mask}'\
+    ip   route   default '${route}'/' $config_dir/config.rc
+				fi
+			else
+				if [ -n "$_dhcp" ] && [ "$_dhcp" = "YES" ] || [ "$route" = "" ]; then
+					sed -i '' '/lo/ ! s/# Interface.*/Interface eth'${eth_num}'\
+\
+    auto on
+    ip autoconfig/' $config_dir/config.rc
+				else
+					sed -i '' '/lo/ ! s/# Interface.*/Interface eth'${eth_num}'\
+\
+service network eth'${eth_num}'\
+    ip   address '${c_ip}'\/'${c_mask}'\
+    ip   route   default '${route}'/' $config_dir/config.rc
+				fi
+				#vrrp mod
+    			sed -i '' '/#/ ! s/group eth.*/group eth'${eth_num}'/' $config_dir/config.rc
+			fi
+		fi
+	done
+#if we can't find the mac,maybe is dynamic mac?
+	if [ -z "$_setmac" ] ;then
+		for i in $ems; do
+			if [ "$(echo $i | cut -c $((${#i})))" = "0" ]; then
+				_def_eth=$i
+				_config=$(echo $emIP | sed 's/inet *//g')
+				c_ip=`echo $_config | cut -d "/" -f 1`
+				c_mask=`echo $_config | cut -d "/" -f 2`
+				#c_netmask=`cdr2mask $c_mask`
+				if [ -n "$_dhcp" ] && [ "$_dhcp" = "YES" ]|| [ "$route" = "" ]; then
+					sed -i '' '/lo/ ! s/# Interface.*/Interface '${_def_eth}'\
+    auto on
+    ip autoconfig/' $config_dir/config.rc
+				else
+					sed -i '' '/lo/ ! s/# Interface.*/Interface '${_def_eth}'\
+    ip   address '${c_ip}'\/'${c_mask}'\
+    ip   route   default '${route}'/' $config_dir/config.rc
+				fi
+			fi
+		done	
+	fi
+
+#reBSD inc the image
+_rebsd_cfg=`find /mnt/ -name "loader.conf" -print | tail -n 1`
+if [ "$_rebsd_cfg" != "" ] ;then
+echo Config the reBSD form Disk.
+sed -i '' '/#/ ! s/rebsd.auto_sshd_port.*/rebsd.auto_sshd_port"'${ssh_port}'"/' $_rebsd_cfg
+sed -i '' '/#/ ! s/rebsd.hostname=.*/rebsd.hostname="'${hostname}'"/' $_rebsd_cfg
+rPass=`kenv -q rebsd.rootpw`
+sed -i '' '/#/ ! s/rebsd.rootpw=.*/rebsd.rootpw="'${rPass}'"/' $_rebsd_cfg
+sed -i '' '/#/ ! s/rebsd.autodhcp=.*/rebsd.autodhcp="'${_dhcp}'"/' $_rebsd_cfg
+sed -i '' '/#/ ! s/rebsd.inet_interfaces=.*/rebsd.inet_interfaces="'${_inet}'"/' $_rebsd_cfg
+sed -i '' '/#/ ! s/rebsd.mac_interfaces=.*/rebsd.mac_interfaces="'${_mif}'"/' $_rebsd_cfg
+_configIP=$(echo $emIP | sed 's/inet *//g')
+c_ip=`echo $_configIP | cut -d "/" -f 1`
+c_mask=`echo $_configIP | cut -d "/" -f 2`
+sed -i '' '/#/ ! s/rebsd.ifconfig_eth0=.*/rebsd.ifconfig_eth0="inet '${c_ip}'\/'${c_mask}'"/' $_rebsd_cfg
+emac=`kenv -q rebsd.ifconfig_eth0_mac`
+sed -i '' '/#/ ! s/rebsd.ifconfig_eth0_mac=.*/rebsd.ifconfig_eth0_mac="'${emac}'"/' $_rebsd_cfg
+sed -i '' '/#/ ! s/rebsd.defaultrouter=.*/rebsd.defaultrouter="'${route}'"/' $_rebsd_cfg
+sed -i '' '/#/ ! s/rebsd.nameservers=.*/rebsd.nameservers="'${dns_s1}' '${dns_s2}'"/' $_rebsd_cfg
+fi
+
+#cr="
+#"
+#sed -i '' "s/Interface eth0/&\\${cr}Do you like programming?/g" $config_dir/config.rc
+#has configed
+#touch ${config_dir}/.checked
+_path=$(echo $config_dir | sed 's/etc *//g')
+#build the config file for ALOHA
+tar -cz -C ${_path} -f /mnt/cfg/config.cur etc
+umount_all
+_reboot=`kenv -q rebsd.auto_finish_action`
+case $_reboot in
+	  reboot)
+		reboot
+		;;
+	shutdown)
+		poweroff
+		;;
+		   *)
+		kenv -v rebsd.auto_is_finish='YES'>/dev/null
+		echo "reBSD work finsh."
+		;;
+  esac
+#
+else
+echo "oops,we need stop now,something wrong happened."
+fi
+else
+echo "this disk type not a linux file system"
+fi

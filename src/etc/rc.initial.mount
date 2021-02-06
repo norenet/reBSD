@@ -1,0 +1,327 @@
+#!/bin/sh
+# ----------------
+# reBSD mounts script
+# rebsd.nore.net @FS 2020/02/02
+# ----------------
+#kenv -q rebsd.dist_mirror="http://local.nore.net"
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
+export PATH
+mirror=`kenv -q rebsd.dist_mirror`
+basedir="/mnt"
+line="\033[0;35m------------------------------------------\033[0m"
+#->NTFS
+mount_ntfs(){
+if [ ! -f "/boot/modules/fusefs.ko" ] && [ ! -f "/usr/local/bin/ntfs-3g" ];then
+echo "Downloading ntfs module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/ntfs.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload ntfs module failed,Please try again.\033[0m"
+		return 1
+	fi
+fi
+kldstat -qm fusefs || kldload fuse 2> /dev/null 
+mount_dir="${basedir}/${1}"
+mount_disk="/dev/${1}"
+mkdir -p $mount_dir
+test=`ntfs-3g -o rw+ $mount_disk $mount_dir 2>&1`
+mcode=$?
+if [ $mcode -ne 0 ];then
+if echo "$test" | grep "fsck" ;then
+printf '%s' "-> Do you want run fsck?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] && echo -e "\033[1;32mMounted\033[0m  [\033[1;31mntfs\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m" && return 1
+echo -e $line
+ntfsfix $mount_disk
+echo -e $line
+ntfs-3g -o rw+ $mount_disk $mount_dir
+if [ $? -ne 0 ];then
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mntfs\033[0m]: \033[1;31mmount ${1} error,exit code:${?}\033[0m"
+return 1
+fi
+else
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mntfs\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m"
+if [ "$test" != "" ];then
+echo -e $line
+echo -e "Error: \033[1;31${test}\033[0m"
+fi
+return 1
+fi
+fi
+echo -e "\033[1;32mMounted\033[0m [\033[1;31mntfs\033[0m]: ${mount_disk} <-> \033[1;33m${mount_dir}\033[0m"
+}
+
+#->FAT32
+mount_fat32(){
+mount_dir="${basedir}/${1}"
+mount_disk="/dev/${1}"
+mkdir -p $mount_dir
+test=`mount -t msdosfs $mount_disk $mount_dir`
+mcode=$?
+if [ $mcode -ne 0 ];then
+if echo "$test" | grep "fsck" ;then
+printf '%s' "-> Do you want run fsck?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] && echo -e "\033[1;32mMounted\033[0m  [\033[1;31mfat\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m" && return 1
+echo -e $line
+fsck_msdosfs -y $mount_disk
+echo -e $line
+mount -t msdosfs -o large $mount_disk $mount_dir
+if [ $? -ne 0 ];then
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mfat\033[0m]: \033[1;31mmount ${1} error,exit code:${?}\033[0m"
+return 1
+fi
+else
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mfat\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m"
+if [ "$test" != "" ];then
+echo -e $line
+echo -e "Error: \033[1;31${test}\033[0m"
+fi
+return 1
+fi
+fi
+echo -e "\033[1;32mMounted\033[0m [\033[1;31mfat\033[0m]: ${mount_disk} <-> \033[1;33m${mount_dir}\033[0m"
+}
+
+#->ufs
+mount_ufs(){
+mount_dir="${basedir}/${1}"
+mount_disk="/dev/${1}"
+mkdir -p $mount_dir
+test=`mount $mount_disk $mount_dir 2>&1`
+mcode=$?
+if [ $mcode -ne 0 ];then
+if echo "$test" | grep "fsck" ;then
+printf '%s' "-> Do you want run fsck?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] && echo -e "\033[1;32mMounted\033[0m  [\033[1;31mufs\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m" && return 1
+echo -e $line
+fsck -y $mount_disk
+echo -e $line
+mount $mount_disk $mount_dir
+if [ $? -ne 0 ];then
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mufs\033[0m]: \033[1;31mmount ${1} error,exit code:${?}\033[0m" 
+return 1
+fi
+else
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mufs\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m"
+if [ "$test" != "" ];then
+echo -e $line
+echo -e "Error: \033[1;31${test}\033[0m"
+fi
+return 1
+fi
+fi
+echo -e "\033[1;32mMounted\033[0m [\033[1;31mufs\033[0m]: ${mount_disk} <-> \033[1;33m${mount_dir}\033[0m"
+}
+
+
+#->EXT2/3/4
+mount_ext2(){
+if [ ! -f "/boot/modules/fusefs.ko" ] && [ ! -f "/usr/local/bin/fuse-ext2" ];then
+echo "Downloading ext module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/ext2.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1 
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload ext module failed,Please try again.\033[0m"
+		return 1
+	fi
+fi
+kldstat -qm fusefs || kldload fuse 2> /dev/null 
+mount_dir="${basedir}/${1}"
+mount_disk="/dev/${1}"
+mkdir -p $mount_dir
+test=`/usr/local/bin/fuse-ext2 -o rw+ $mount_disk $mount_dir 2>&1`
+#test=`fuse2fs $mount_disk $mount_dir 2>&1`
+mcode=$?
+if [ $mcode -ne 0 ];then
+if echo "$test" | grep "fsck" ;then
+printf '%s' "-> Do you want run fsck?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] && echo -e "\033[1;32mMounted\033[0m  [\033[1;31mext\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m" && return 1
+echo -e $line
+e2fsck -fy $mount_disk
+echo -e $line
+/usr/local/bin/fuse-ext2 -o rw+ $mount_disk $mount_dir
+if [ $? -ne 0 ];then
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mext\033[0m]: \033[1;31mmount ${1} error,exit code:${?}\033[0m"
+return 1
+fi
+#fuse2fs $mount_disk $mount_dir || echo -e "\033[1;32mMounted\033[0m  [\033[1;31mext\033[0m]: \033[1;31mmount ${1} error,exit code:${?}\033[0m" && return 1
+else
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mext\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m"
+if [ "$test" != "" ];then
+echo -e $line
+echo -e "Error: \033[1;31${test}\033[0m"
+fi
+return 1
+fi
+fi
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mext\033[0m]: ${mount_disk} <-> \033[1;33m${mount_dir}\033[0m"
+}
+
+load_lkl(){
+if [ `df -m /usr | tail -n1 | awk '{print $4}'` -lt 16 ];then 
+echo -e "\033[1;31mvery Low available physical memory.\033[0m"
+echo -e "Sorry:\033[1;33m reBSD can't load xfs module\033[0m"
+return 1
+fi
+if [ ! -f "/usr/local/lib/liblkl.a" ] || [ ! -f "/usr/local/bin/lklfuse" ];then
+echo "Downloading xfs module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/xfs.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload xfs module failed,Please try again.\033[0m"
+		return 1
+	fi
+fi
+}
+#->lvm
+mount_lvm(){
+if [ ! -f "/boot/modules/geom_linux_lvm.ko" ] && [ ! -f "/usr/local/bin/fuse-ext2" ];then
+echo "Downloading lvm module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/ext2.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload xfs module failed,Please try again.\033[0m"
+		return 1
+	fi
+fi
+kldstat -qm fusefs || kldload fuse 2> /dev/null 
+kldstat -qm g_linux_lvm || kldload geom_linux_lvm 2> /dev/null
+#echo -e "Analyzing lvm group of \033[0;34m${1}\033[0m"
+for lvm_part in `ls /dev/linux_lvm/* | grep -v "swap"`; do
+mount_dir="${basedir}/`basename $lvm_part`"
+mount_disk="${lvm_part}"
+eval `blkid "$lvm_part" | awk '{print $3}'`
+#echo "lvm group type:${TYPE}"
+#[ "$TYPE" == "xfs" ] && echo -e "\033[1;32mMounted\033[0m  [\033[1;31mlvm\033[0m]: \033[1;31mnot support ${TYPE} lvm.\033[0m" && return 1
+case $TYPE in
+xfs)
+	load_lkl || return 1
+	lvm_exec="lklfuse -o type=xfs $mount_disk $mount_dir"
+	;;
+btrfs)
+	load_lkl || return 1
+	lvm_exec="lklfuse -o type=btrfs $mount_disk $mount_dir"
+	;;
+*)
+	#lvm_exec="fuse2fs $mount_disk $mount_dir"
+	lvm_exec="fuse-ext2 -o rw+ $mount_disk $mount_dir"
+	;;
+esac
+mkdir -p $mount_dir
+test=`$lvm_exec 2>&1`
+mcode=$?
+if [ $mcode -ne 0 ];then
+if echo "$test" | grep "fsck" ;then
+printf '%s' "-> Do you want run fsck?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] && echo -e "\033[1;32mMounted\033[0m  [\033[1;31mlvm\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m" && return 1
+echo -e $line
+e2fsck -fy $mount_disk
+echo -e $line
+#test=`fuse-ext2 -o rw+ $mount_disk $mount_dir 2>&1`
+$lvm_exec
+if [ $? -ne 0 ];then
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mlvm\033[0m]: \033[1;31mmount ${1} error,exit code:${?}\033[0m"
+return 1
+fi
+else
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mlvm\033[0m]: \033[1;31mmount ${1} error,exit code:${mcode}\033[0m"
+if [ "$test" != "" ];then
+echo -e $line
+echo -e "Error: \033[1;31${test}\033[0m"
+fi
+return 1
+fi
+fi
+echo -e "\033[1;32mMounted\033[0m  [\033[1;31mlvm\033[0m]: ${mount_disk} <-> \033[1;33m${mount_dir}\033[0m"
+done
+}
+
+umount_all(){
+firstDisk=$(/sbin/sysctl -n kern.disks |tr " " "|")
+for umount in `mount -l | grep -E "${firstDisk}|fuse|mnt" | sort -V -r | awk '{print $3}'`; do
+echo "uMount: ${umount}"
+umount -f $umount
+[ $? -ne 0 ] && echo "umount error,try reinstall." && exit 1
+mount -a
+done
+echo -e "\033[1;32muMount all is done.\033[0m"
+echo "--------------------------------------------"
+}
+
+if df | grep "${basedir}" ;then
+echo -e "\033[1;31mPlease uMount all \"${basedir}\" mounts.\033[0m"
+printf '%s' "-> Do you want to auto umount all?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] &&echo&&exit 1
+umount_all
+fi
+
+
+for disk in `sysctl -n kern.disks | tr ' ' '\n' | grep -v '^cd'`; do
+	echo -e "Analyzing Disk: \033[0;34m${disk}\033[0m"
+	for parts in `gpart show -p $disk | tail -n +2 | awk '{print $3"|"$4}' | grep -wv "|"`; do
+		path=`echo $parts | cut -f1 -d'|'`
+		type=`echo $parts | cut -f2 -d'|'`
+		case $type in
+			linux-data)
+			mount_ext2 $path && ec_type="f"
+			;;
+			linux-lvm)
+			mount_lvm $path && ec_type="f"
+			;;
+			freebsd)
+			mount_ufs $path && ec_type="${path} ${ec_type}"
+			;;
+			fat32)
+			mount_fat32 $path && ec_type="${path} ${ec_type}"
+			;;
+			ntfs)
+			mount_ntfs $path && ec_type="f"
+			;;
+			#fat32 and ntfs = ms-basic-data
+			ms-basic-data)
+			if [ "`fstyp "/dev/${path}"`" == "msdosfs" ];then
+			mount_fat32 $path && ec_type="${path} ${ec_type}"
+			else
+			mount_ntfs $path && ec_type="f"
+			fi
+			;;
+			ms-recovery)
+			mount_ntfs $path && ec_type="f"
+			;;
+			free)
+			;;
+			ebr)
+			;;
+			efi)
+			;;
+			ms-reserved)
+			;;
+			*swap*)
+			;;
+			*)
+			echo "Sorry , reBSD not support Partition type:\"${type}\" mount form \"/dev/${path}\""
+			;;
+			esac
+	done
+	if [ -n "$ec_type" ];then
+		echo -e $line
+		if [ "$ec_type" == "f" ];then
+			echo -e "uMount command: \033[1;31mumount \`ls /dev/fuse*\` && mount -a\033[0m"
+		else
+			for um in "$ec_type"; do
+				echo -e "uMount command: \033[1;31mumount ${basedir}/${um} && mount -a\033[0m" 
+			done
+		fi
+	fi
+done
+
+if [ -n "$ec_type" ];then
+echo
+echo -e "Try using: \"\033[1;33mexit\033[0m\" command back to the menu."
+echo
+tcsh -c 'cd /mnt && tcsh'
+echo
+else
+echo
+fi

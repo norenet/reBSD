@@ -1,0 +1,138 @@
+#!/bin/sh
+# ----------------
+# conf script for ubuntu version >= 18.04 
+# reBSD.nore.net
+# Do not change anything here until you know what you are doing
+# ----------------
+HOME=/
+PATH=/sbin:/bin/:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
+export HOME PATH
+firstDisk=$(sysctl -n kern.disks | sed -E 's/[[:<:]](cd|ar)[0-9]+//g' | tr "\t" "\n"|tr " " "\n"|sort -n|uniq|grep -v "^$"|head -1)
+
+if [ `geom disk list $firstDisk | grep Mediasize | awk '{print $2}'` -lt 5368709120 ];then 
+echo -e "Ubuntu 18.04 Minimum disk space requirements:\033[1;31m 5Gb.\033[0m"
+echo -e "Try using:\033[1;38m other linux system.\033[0m"
+read -p "press a key to continue" exit
+exit 1
+fi
+
+if [ `sysctl hw.realmem | awk '{print $2}'` -lt 402653184 ];then 
+echo -e "Ubuntu 18.04 Minimum memory requirements:\033[1;31m 384Mb,very Low available physical memory.\033[0m"
+echo -e "Try using:\033[1;38m other linux system.\033[0m"
+printf '%s' "-> (Not recommended)Do you want to continue?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] && exit 1
+fi
+
+umount_all(){
+for umount in `mount -l | grep -E "${firstDisk}|fuse|mnt" | sort -V -r | awk '{print $3}'`; do
+echo "uMount: ${umount}"
+umount -f $umount
+[ $? -ne 0 ] && echo "umount error,try reinstall." && exit 1
+mount -a
+done
+echo -e "\033[1;32muMount all is done.\033[0m"
+echo "--------------------------------------------"
+}
+
+if /sbin/mount -l | grep -E "${firstDisk}|fuse|mnt" ;then
+echo -e "\033[1;31mPlease uMount \"${firstDisk}\" mount.\033[0m"
+printf '%s' "-> Do you want to auto umount ${firstDisk}?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] &&echo&&exit 1
+umount_all
+fi
+
+echo 'Start install Ubuntu 18.04.3(net installer)..'
+mirror=`kenv -q rebsd.dist_mirror`
+emDHCP=`kenv -q rebsd.autodhcp`
+srvname=`kenv -q rebsd.hostname`
+rootPass=`kenv -q rebsd.rootpw`
+sshPort=`kenv -q rebsd.auto_sshd_port`
+_reboot=`kenv -q rebsd.auto_finish_action`
+
+_inet=`kenv -q rebsd.inet_interfaces`
+_mif=`kenv -q rebsd.mac_interfaces`
+_dr=`kenv -q rebsd.defaultrouter`
+_ns=`kenv -q rebsd.nameservers`
+_fixrs=`/bin/kenv -q rebsd.fix_route`
+
+user="root"
+basedir="/mnt"
+drivedev="/dev/${firstDisk}s1"
+raw_src="${mirror}/Base/Linux/Ubuntu/18.04.3/rebsd-ub.xz"
+
+echo "        clone ubuntu 18.04.3 raw to ${firstDisk}"
+if fetch --timeout=300 --no-verify-hostname --no-verify-peer -q $raw_src -o - | xzcat | dd of=/dev/${firstDisk} bs=64k status=progress conv=notrunc && sync; then
+#if [ `fstyp -l $drivedev` == "ext2fs" ];then
+if [ "`gpart show -p $firstDisk | grep -E "${firstDisk}s1.*linux-data"`" ];then
+echo "start ubuntu sysprep."
+mount -t ext2fs $drivedev $basedir
+[ $? -ne 0 ] && echo "mount disk error,try reinstall." && exit 1
+rootPass=$(echo `kenv -q rebsd.rootpw` | pw useradd reBSD -h 0 -N | awk -F: '{print $2}')
+sed -i '' "s:^$user\:[^\:]*\::$user\:x\::"     ${basedir}/etc/shadow
+sed -i '' "s:^$user\:[^\:]*\::$user\:$rootPass\::" ${basedir}/etc/shadow
+#sshd
+#echo "Port ${sshPort}" >> ${basedir}/etc/ssh/sshd_config
+#echo "PermitRootLogin yes" >> ${basedir}/etc/ssh/sshd_config
+sed -i '' "s@.*Port .*@Port $sshPort@" "${basedir}/etc/ssh/sshd_config"
+sed -i '' "s@.*PermitRootLogin .*@PermitRootLogin yes@" "${basedir}/etc/ssh/sshd_config"
+#ssh-keygen -t rsa -b 4096 -f ${basedir}/etc/ssh/ssh_host_rsa_key -q -N ''
+dropbearkey -t rsa -f "/tmp/id_rsa" -s 4096
+dropbearconvert dropbear openssh "/tmp/id_rsa" ${basedir}/etc/ssh/ssh_host_rsa_key && rm -f /tmp/id_rsa
+#hostname
+echo $srvname > ${basedir}/etc/hostname
+#exp conf
+conf_dir="${basedir}/etc/rebsd_conf"
+#eth
+echo "ifconfig_inet_eth=\"$_inet\""> $conf_dir
+if [ -n "$emDHCP" ] && [ "$emDHCP" = "YES" ]; then
+echo "autodhcp=\"YES\"">> $conf_dir
+fi
+#ovh fix
+[ -n "$_fixrs" ] && echo "fix_route=\"${_fixrs}\"">> $conf_dir
+if [ -n "$_mif" ]; then
+	echo "mac_interfaces=\"${_mif}\"">> $conf_dir
+	for i in $_mif; do
+		_mac=`kenv rebsd.ifconfig_${i}_mac`
+		if [ -n "$_mac" ]; then
+			echo "ifconfig_${i}_mac=\"${_mac}\"">> $conf_dir
+		fi
+		_config=$(echo `kenv rebsd.ifconfig_${i}` | sed 's/inet *//g')
+		if [ -n "$_config" ]; then
+			echo "ifconfig_${i}=\"${_config}\"">> $conf_dir
+		fi
+	done
+fi
+#route
+echo "defaultrouter=\"$_dr\"" >> $conf_dir
+[ $? -ne 0 ] && echo "sysprep error,try reinstall." && exit 1
+#dns servers.
+if [ -n "$_ns" ]; then
+echo "dnsnames=\"${_ns}\"" | sed 's/[ ][ ]*/,/g'>> $conf_dir
+fi
+cp /etc/auto/sysprep/ubuntu/18.04/rc.local ${basedir}/etc/
+chmod +x ${basedir}/etc/rc.local
+umount $drivedev 
+case $_reboot in
+	  reboot)
+		reboot
+		;;
+	shutdown)
+		poweroff
+		;;
+		   *)
+		kenv -v rebsd.auto_is_finish='YES'>/dev/null
+		echo "reBSD work finsh."
+		;;
+  esac
+else
+echo "oops,we need stop now,something wrong happened."
+fi
+else
+echo "this disk type not a linux file system"
+fi
+
+##init
+#https://askubuntu.com/questions/1064921/scripting-netplan-for-static-ip-address
+

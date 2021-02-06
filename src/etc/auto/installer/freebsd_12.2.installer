@@ -1,0 +1,41 @@
+#!/bin/csh
+if ( `df -m /usr | tail -n1 | awk '{print $4}'` < 260 ) then 
+printf "\033[1;31mvery Low available physical memory.\033[0m\n"
+printf "Install FreeBSD need:\033[1;38m 300M\033[0m available memory.\n"
+exit 1
+endif
+
+echo 'Start install FreeBSD 12.2(net installer)..'
+setenv mirror `kenv -q rebsd.dist_mirror`
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/FreeBSD/12.2/inc/share_bsdconfig.txz" -qo- | tar  -xJ -C / -f -
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/FreeBSD/12.2/inc/bsdconfig.txz" -qo- | tar  -xJ -C / -f -
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/FreeBSD/12.2/inc/bsdinstall.txz" -qo- | tar  -xJ -C / -f -
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+
+mkdir /tmp/freebsd-dist > & /dev/null
+fetch --timeout=60 --no-verify-hostname --no-verify-peer -qo /tmp/freebsd-dist/MANIFEST http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/12.2-RELEASE/MANIFEST
+if ( $? != 0 ) then
+printf "\033[1;31mDownload reBSD module failed,Please try again.\033[0m\n"
+exit 1
+endif
+
+setenv TERM vt100 
+setenv DISTRIBUTIONS "kernel.txz base.txz"
+setenv BSDINSTALL_DISTDIR /tmp/freebsd-dist
+setenv BSDINSTALL_DISTSITE ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/12.2-RELEASE
+bsdinstall distfetch 
+bsdinstall script /etc/auto/scripts/bsd_installer

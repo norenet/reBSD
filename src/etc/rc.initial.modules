@@ -1,0 +1,133 @@
+#!/bin/sh
+# ----------------
+# reBSD modules script
+# rebsd.nore.net @FS 2020/02/02
+# ----------------
+mirror=`kenv -q rebsd.dist_mirror`
+
+#->pkg
+add_pkg(){
+if [ ! -f /usr/sbin/repkg ] && [ ! -f /usr/sbin/service ];then
+echo "unpack pkg module files..."
+[ -f "/usr/rebsd/pkg.txz" ] && tar -xJC / -f /usr/rebsd/pkg.txz && rm -f /usr/rebsd/pkg.txz && mv /usr/sbin/pkg /usr/sbin/repkg
+fi
+echo -e "\033[1;33mAdded pkg function.\033[0m"
+}
+
+#->NTFS
+add_ntfs(){
+if [ ! -f /boot/modules/fusefs.ko ] && [ ! -f /usr/local/bin/ntfs-3g ];then
+echo "Downloading ntfs module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/ntfs.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload ntfs module failed,Please try again.\033[0m"
+		return 1
+	fi
+fi
+/sbin/kldstat -qm fusefs || /sbin/kldload fuse 2> /dev/null 
+echo -e "\033[1;33mAdded ntfs module.\033[0m"
+}
+
+#->EXT2/3/4
+add_ext(){
+if [ ! -f /boot/modules/fusefs.ko ] && [ ! -f /usr/local/bin/fuse-ext2 ];then
+echo "Downloading ext2 module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/ext2.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload ext module failed,Please try again.\033[0m"
+		return 1
+	fi
+fi
+/sbin/kldstat -qm fusefs || /sbin/kldload fuse 2> /dev/null 
+echo -e "\033[1;33mAdded ext module.\033[0m"
+}
+
+#->lvm
+add_lvm(){
+if [ ! -f /boot/modules/geom_linux_lvm.ko ] && [ ! -f /usr/local/bin/fuse-ext2 ];then
+echo "Downloading lvm module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/ext2.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload lvm module failed,Please try again.\033[0m"
+		return 1
+	fi
+fi
+/sbin/kldstat -qm fusefs || /sbin/kldload fuse 2> /dev/null 
+/sbin/kldstat -qm g_linux_lvm || /sbin/kldload geom_linux_lvm 2> /dev/null
+echo -e "\033[1;33mAdded lvm module.\033[0m"
+}
+
+add_xfs(){
+if [ `df -m /usr | tail -n1 | awk '{print $4}'` -lt 16 ];then 
+echo -e "\033[1;31mvery Low available physical memory.\033[0m"
+echo -e "Sorry:\033[1;33m reBSD can't load xfs module\033[0m"
+return 1
+fi
+if [ ! -f "/usr/local/bin/lklfuse" ];then
+echo "Downloading xfs module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/xfs.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload xfs module failed,Please try again.\033[0m"
+		return 1
+	fi
+fi
+}
+
+add_squash(){
+if [ `df -m /usr | tail -n1 | awk '{print $4}'` -lt 16 ];then 
+echo -e "\033[1;31mvery Low available physical memory.\033[0m"
+echo -e "Sorry:\033[1;33m reBSD can't load xfs module\033[0m"
+return 1
+fi
+if [ ! -f "/usr/local/bin/squashfuse" ];then
+echo "Downloading SquashFS module files..."
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/squash.txz" -qo- 2>&1 | tar  -xJ -C / -f - 2>&1
+	if [ $? -ne 0 ];then
+		echo -e "\033[1;31mDownload xfs module failed,Please try again.\033[0m"
+		return 1
+	fi
+/sbin/kldstat -qm fusefs || /sbin/kldload fuse 2> /dev/null 
+echo -e "\033[1;33mAdded SquashFS module.\033[0m"
+fi
+}
+
+echo -e "\033[1;36mPlease select a reBSD module.\033[0m"
+# display a cheap menu
+echo ""
+echo -e " \033[1;33m0\033[0m) \033[1;35mBack to main menu\033[0m"
+echo -e " \033[1;33m1\033[0m) Enable ext2/3/4 support  	\033[1;33m4\033[0m) Enable NTFS support"
+echo -e " \033[1;33m2\033[0m) Enable xfs/btrfs support	\033[1;33m5\033[0m) Enable pkg & service"
+echo -e " \033[1;33m3\033[0m) Enable lvm support		\033[1;33m6\033[0m) Enable SquashFS support"
+echo
+read -p "Enter an option: " opmode
+echo
+# see what the user has chosen
+case ${opmode} in
+0)
+	exit;
+	;;
+1)
+	add_ext
+	$0
+	;;
+2)
+	add_xfs
+	$0
+	;;
+3)
+	add_lvm
+	$0
+	;;
+4)
+	add_ntfs
+	$0
+	;;
+5)
+	add_pkg
+	$0
+	;;
+6)
+	add_squash
+	$0
+	;;
+esac

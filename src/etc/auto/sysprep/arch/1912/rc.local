@@ -1,0 +1,154 @@
+#!/bin/sh -e
+#
+# rc.local
+#
+# ----------------
+# conf script for arch version >= 201912
+# reBSD.nore.net @FS 2020/1/1
+# Do not change anything here until you know what you are doing
+# ----------------
+
+while read rebsd_val; do eval $rebsd_val; done < /etc/rebsd_conf
+createDhcpCFG() {
+/bin/cat > /etc/systemd/network/${1}.network <<EOF
+[Match]
+Name=$1
+[Network]
+DHCP=ipv4
+EOF
+}
+createStaticCFG() {
+/bin/cat > /etc/systemd/network/${1}.network <<EOF
+[Match]
+Name=$1
+[Network]
+Address=$2
+Gateway=$3
+DNS=$4
+DNS=$5
+EOF
+}
+createLocalCFG() {
+/bin/cat > /etc/systemd/network/${1}.network <<EOF
+[Match]
+Name=$1
+[Network]
+Address=$2
+EOF
+}
+#
+#dhcp
+if [ -n "$autodhcp" ] && [ "$autodhcp" = "YES" ]; then
+_dif=`/bin/ls /sys/class/net | grep -v "lo"`
+for if in $_dif; do
+createDhcpCFG $if;
+done
+systemctl enable systemd-networkd
+systemctl enable systemd-resolved
+systemctl enable sshd 
+#static ip
+else
+for ef in ${mac_interfaces}; do
+	_cmac=`eval echo "\\$ifconfig_${ef}_mac"`
+	if [ -n "$_cmac" ]; then
+		_dif=`/bin/ls /sys/class/net`
+		for if in $_dif; do
+			_mac=`cat /sys/class/net/${if}/address`
+			if [ "$_cmac" = "$_mac" ]; then
+				_cif=`eval echo "\\$ifconfig_${ef}"`
+				if [ -n "$_cif" ]; then
+					if [ "$ef" = "$ifconfig_inet_eth" ];then
+						case "$_cif" in
+							dhcp)
+							createDhcpCFG $if;
+							systemctl enable dhcpcd
+							;;
+							*)
+							createStaticCFG $if $_cif $defaultrouter ${dnsnames};
+							;;
+							esac
+						_setmac="true"
+					else
+						case "$_cif" in
+							dhcp)
+							createDhcpCFG $if;
+							;;
+							*)
+							createLocalCFG $if $_cif;
+							;;
+							esac
+					fi
+					systemctl enable systemd-networkd
+					systemctl enable systemd-resolved
+					systemctl enable sshd 
+				fi		
+			fi
+		done
+	fi
+done
+
+#if can't find a mac address or inet mac address has changed.
+#ah,we need to do something to fix this.
+if [ ! -n "$_setmac" ]; then
+#trying find a eth name by first device
+min=$(/bin/ls /sys/class/net | /usr/bin/tr "\t" "\n"|/usr/bin/tr " " "\n"|/usr/bin/sort -n|/usr/bin/uniq|/bin/grep -v "^$"|/usr/bin/head -1)
+_cif=`eval echo "\\$ifconfig_${ifconfig_inet_eth}"`
+case "$_cif" in
+	dhcp)
+	createDhcpCFG $min;
+	systemctl enable dhcpcd
+	;;
+	*)
+	createStaticCFG $min $_cif $defaultrouter ${dnsnames};
+	;;
+	esac
+systemctl enable systemd-networkd
+systemctl enable systemd-resolved
+systemctl enable sshd 
+fi
+fi
+echo "  ${dnsnames}" | sed 's/[ ][ ]*/\nnameserver /g'>/etc/resolv.conf
+#grow disk.
+rootdev=`findmnt --target / -o SOURCE -n`
+rootdrivename=`lsblk -no pkname $rootdev`
+rootdrive="/dev/"$rootdrivename
+majorminor=`lsblk  $rootdev -o MAJ:MIN | tail -1`
+part_number=${majorminor#*:}
+/sbin/swapoff -a
+/sbin/swapoff -a
+#sed -i '/swap/s/^/\#/g' /etc/fstab
+sed -i "/swap/d" /etc/fstab 2>/dev/null;
+printf "d\n3\nw\n" | fdisk $rootdrive
+printf "R\nWyes\nQ" | cfdisk $rootdrive
+partprobe $rootdrive
+smem="\"-`awk '/MemTotal/ {print $2}' /proc/meminfo`KB\""
+#echo Yes | parted ---pretend-input-tty $rootdrive resizepart 2 Yes $smem 2>&1 > /dev/null || true
+/usr/sbin/parted ---pretend-input-tty $rootdrive resizepart 2 << EOF
+yes
+${smem}
+EOF
+printf "n\n3\n\n\nt\n3\n19\nw\n" | fdisk $rootdrive
+resize2fs $rootdev
+mkinitcpio -p linux
+rm -f /etc/rebsd_conf
+#shutdown -r +1
+nohup sh -c 'sleep 6 && reboot' > /dev/null 2>&1&
+echo "sysprep finish."
+eof="EOF"
+cat <<EOF > $0
+#!/bin/sh -e
+rootdev=\`findmnt --target / -o SOURCE -n\`
+rootdrivename=\`lsblk -no pkname \$rootdev\`
+swapdrive="/dev/"\$rootdrivename"3"
+swapdrivetype=\$rootdrivename"3"
+#mkswap \$swapdrive
+#swapon \$swapdrive
+sUUID=\`ls -la /dev/disk/by-uuid | grep \$swapdrivetype | awk '{print \$9}'\`
+echo "UUID=\${sUUID} none            swap    sw              0       0">>/etc/fstab
+mkinitcpio -p linux 2>/dev/null >/dev/null
+cat <<EOF > \$0
+#!/bin/sh -e
+exit 0
+$eof
+EOF
+exit 0

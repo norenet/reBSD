@@ -1,0 +1,150 @@
+#!/bin/sh
+# ----------------
+# reBSD sysprep conf script for windows Server version
+# rebsd.nore.net @ FS 2019/12/24 ^_^ Happy Holidays 2019!
+# Do not change anything here until you know what you are doing
+# ----------------
+HOME=/
+PATH=/sbin:/bin/:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
+export HOME PATH
+firstDisk=$(sysctl -n kern.disks | sed -E 's/[[:<:]](cd|ar)[0-9]+//g' | tr "\t" "\n"|tr " " "\n"|sort -n|uniq|grep -v "^$"|head -1)
+
+if [ `geom disk list $firstDisk | grep Mediasize | awk '{print $2}'` -lt 5368709120 ];then 
+echo -e "Windows 2003R2 Minimum disk space requirements:\033[1;31m 5Gb.\033[0m"
+echo -e "Try using:\033[1;38m other Windows system.\033[0m"
+read -p "press a key to continue" exit
+exit 1
+fi
+
+if [ `sysctl hw.realmem | awk '{print $2}'` -lt 1073741824 ];then 
+echo -e "Windows 2003R2 Minimum memory requirements:\033[1;31m 1024Mb,very Low available physical memory.\033[0m"
+echo -e "Try using:\033[1;38m other Windows system.\033[0m"
+printf '%s' "-> (Not recommended)Do you want to continue?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] && exit 1
+fi
+
+umount_all(){
+for umount in `mount -l | grep -E "${firstDisk}|fuse|mnt" | sort -V -r | awk '{print $3}'`; do
+echo "uMount: ${umount}"
+umount -f $umount
+[ $? -ne 0 ] && echo "umount error,try reinstall." && exit 1
+mount -a
+done
+echo -e "\033[1;32muMount all is done.\033[0m"
+echo "--------------------------------------------"
+}
+
+if /sbin/mount -l | grep -E "${firstDisk}|fuse|mnt" ;then
+echo -e "\033[1;31mPlease uMount \"${firstDisk}\" mount.\033[0m"
+printf '%s' "-> Do you want to auto umount ${firstDisk}?! [y/N]: "
+read TMP_YN
+[ `expr "x$TMP_YN" : 'x[Yy]'` -lt 1 ] &&echo&&exit 1
+umount_all
+fi
+mirror=`kenv -q rebsd.dist_mirror`
+emDHCP=`kenv -q rebsd.autodhcp`
+srvname=`kenv -q rebsd.hostname`
+version=`kenv -q rebsd.auto_version`
+rootPass=`kenv -q rebsd.rootpw`
+rdpPort=`kenv -q rebsd.auto_rdpport`
+_reboot=`kenv -q rebsd.auto_finish_action`
+_inet=`kenv -q rebsd.inet_interfaces`
+_mif=`kenv -q rebsd.mac_interfaces`
+_cns=`kenv -q rebsd.nameservers`
+
+
+basedir="/mnt"
+drivedev="/dev/${firstDisk}s1"
+saveconf="${basedir}/reBSD/rebsd_conf"
+raw_src="${mirror}/Base/Windows/2K3R2/2k3.raw.xz"
+
+cdrTOmask () {
+   set -- $(( 5 - ($1 / 8) )) 255 255 255 255 $(( (255 << (8 - ($1 % 8))) & 255 )) 0 0 0
+   [ $1 -gt 1 ] && shift $1 || shift
+   echo ${1-0}.${2-0}.${3-0}.${4-0}
+}
+maskTOcdr () {
+   local x=${1##*255.}
+   set -- 0^^^128^192^224^240^248^252^254^ $(( (${#1} - ${#x})*2 )) ${x%%.*}
+   x=${1%%$3*}
+   echo $(( $2 + (${#x}/4) ))
+}
+
+echo "clone Windows 2003r2 raw to ${firstDisk}"
+if fetch --timeout=300 --no-verify-hostname --no-verify-peer -q $raw_src -o - | xzcat | dd of=/dev/${firstDisk} bs=128k status=progress conv=notrunc && sync; then
+#load rebsd ntfs kernel drive
+if ! kldstat -qm fusefs;then
+fetch --timeout=60 --no-verify-hostname --no-verify-peer "${mirror}/Base/reBSD/Mods/ntfs.txz" -qo- | tar  -xJ -C / -f -  
+kldload fuse 2> /dev/null && echo "load ntfs ok"
+fi
+if [ "`gpart show -p $firstDisk | grep -E "${firstDisk}s1.*ntfs"`" ];then
+echo "start windows 2003r2 sysprep."
+ntfs-3g $drivedev $basedir && mount -a
+[ $? -ne 0 ] && echo "mount disk error,try reinstall." && exit 1
+#conf start
+_ipaddr="dhcp"
+_inet_eth=$(route -n get default | grep 'interface:' | grep -o '[^ ]*$')
+_inet_mac=`ifconfig $_inet_eth | grep ether | awk '{ print $2 }'| tr [:lower:] [:upper:]`
+[ `echo $_cns | awk '{print $2}'` ] && _ns=`echo $_cns | awk '{print $1","$2}'` || _ns=`echo $_cns | awk '{print $1",1.1.1.1"}'`
+_inet_eths="eth0"
+if [ ! -f /var/run/dhclient/dhclient.${_inet_eth}.pid ] ; then
+_ipaddr=`ifconfig $_inet_eth | grep inet | awk '/broadcast/ {print $2}' `
+fi
+_inet_gate=$(route -n get default | grep 'gateway:' | grep -o '[^ ]*$')
+_inet_mask=`ifconfig $_inet_eth | grep inet | awk '/broadcast/ {print $4}' `
+_netmask=$(echo $_inet_mask | sed 's/0x// ; s/../& /g' | tr [:lower:] [:upper:] | while read B1 B2 B3 B4 ;do
+echo "ibase=16;$B1;$B2;$B3;$B4" | bc | tr '\n' . | sed 's/\.$//';done)
+
+echo "srv_hostname=\"$srvname\"">$saveconf
+echo "srv_description=\"Install by reBSD v${version}\"">>$saveconf
+echo "srv_password=\"$rootPass\"">>$saveconf
+[ -n "$rdpPort" ] && echo "srv_rdp_port=$rdpPort">>$saveconf || echo "srv_rdp_port=3389">>$saveconf
+echo "defaultrouter=\"$_inet_gate\"">>$saveconf
+echo "dnsnames=$_ns">>$saveconf
+[ "$emDHCP" == "YES" ]  && echo "autodhcp=\"YES\"">>$saveconf || echo "autodhcp=\"NO\"">>$saveconf
+echo "ifconfig_eth0_mac=\"${_inet_mac}\"">>$saveconf
+echo "ifconfig_eth0=\"${_ipaddr}\"">>$saveconf
+echo "ifconfig_eth0_mask=\"${_netmask}\"">>$saveconf
+if [ -n "$_mif" ]; then
+	for i in $_mif; do
+		_mac=`kenv rebsd.ifconfig_${i}_mac | tr [:lower:] [:upper:]`
+		if [ -n "$_mac" ] & [ ! "$i" == "$_inet" ]; then
+			echo "ifconfig_${i}_mac=\"$_mac\"" >>$saveconf
+			_config=$(echo `kenv rebsd.ifconfig_$i` | sed 's/inet *//g')
+			if [ -n "$_config" ]; then
+				_conf_ip=`echo $_config | cut -d '/' -f1`
+				_conf_smask=`echo $_config | cut -d '/' -f2 `
+				_conf_mask=`cdrTOmask $_conf_smask`
+				#fix xp/2003 mask
+				[ "${_conf_mask##*255.}" = "255" ] && _conf_mask="${_conf_mask#*255.}.0"
+				echo "ifconfig_$i=\"$_conf_ip\"" >>$saveconf
+				echo "ifconfig_${i}_mask=\"$_conf_mask\"">>$saveconf
+				_inet_eths="${_inet_eths} ${i}">>$saveconf
+			fi	
+		fi
+	done
+fi
+echo "ifconfig_inet_eth=eth0">>$saveconf
+echo "mac_interfaces=$_inet_eths">>$saveconf
+[ $? -ne 0 ] && echo "sysprep error,try reinstall." && exit 1
+#conf end
+umount `ls /dev/fuse*`
+case $_reboot in
+	  reboot)
+		reboot
+		;;
+	shutdown)
+		poweroff
+		;;
+		   *)
+		kenv -v rebsd.auto_is_finish='YES'>/dev/null
+		echo "reBSD work finsh."
+		;;
+  esac
+else
+echo "this disk type not a windows file system"
+fi
+else
+echo "oops,we need stop now,something wrong happened."
+fi

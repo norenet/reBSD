@@ -1,0 +1,470 @@
+_ipaddr="dhcp"
+_inet_eth=$(/sbin/route -n get default | /usr/bin/grep 'interface:' | /usr/bin/grep -o '[^ ]*$')
+if [ ! -f /var/run/dhclient/dhclient.${_inet_eth}.pid ] ; then
+_inet_gate=$(/sbin/route -n get default | /usr/bin/grep 'gateway:' | /usr/bin/grep -o '[^ ]*$')
+#_inet_mac=`/sbin/ifconfig $_inet_eth | /usr/bin/grep ether | /usr/bin/awk '{ print $2 }'`
+_ipaddr=`/sbin/ifconfig $_inet_eth | /usr/bin/grep inet | /usr/bin/awk '/broadcast/ {print $2}' `
+#_inet_Ip=`ifconfig $_inet_eth | grep -E "([0-9]{1,3}\.){3}[0-9]{1,3}" | grep -v 127.0.0.1 | awk '{ print $2 }' | cut -f2 -d:`
+_inet_mask=`/sbin/ifconfig $_inet_eth | /usr/bin/grep inet | /usr/bin/awk '/broadcast/ {print $4}' `
+_netmask=$(/bin/echo $_inet_mask | /usr/bin/sed 's/0x// ; s/../& /g' | /usr/bin/tr [:lower:] [:upper:] | while read B1 B2 B3 B4 ;do                             
+/bin/echo "ibase=16;$B1;$B2;$B3;$B4" | /usr/bin/bc | /usr/bin/tr '\n' . | /usr/bin/sed 's/\.$//';done)
+_inet_smask=$(/bin/echo $_netmask | /usr/bin/awk -F. '{print "obase=2;" $1 "*2^24+" $2 "*2^16+" $3 "*2^8+" $4}' | /usr/bin/bc | /usr/bin/awk '{ sub("10*$","1", $0); print length($0); }')
+/bin/kenv -q pf.inet_gate=${_inet_gate} > /dev/null 2> /dev/null
+/bin/kenv -q pf.inet_smask=${_inet_smask} > /dev/null 2> /dev/null
+fi
+/bin/kenv -q pf.inet_eth=${_inet_eth} > /dev/null 2> /dev/null
+/bin/kenv -q pf.inet_ipaddr=${_ipaddr} > /dev/null 2> /dev/null
+PARTITIONS=$(sysctl -n kern.disks | sed -E 's/[[:<:]](cd|ar)[0-9]+//g' | tr "\t" "\n"|tr " " "\n"|sort -n|uniq|grep -v "^$"|head -1)
+
+#!/bin/sh
+rootPass=$(/bin/echo `/bin/kenv -q rebsd.rootpw` | /usr/sbin/pw useradd reBSD -h 0 -N | /usr/bin/awk -F: '{print $2}')
+emDHCP=`/bin/kenv -q rebsd.autodhcp`
+srvname=`/bin/kenv -q rebsd.hostname`
+sshPort=`/bin/kenv -q rebsd.auto_sshd_port`
+webPort=`/bin/kenv -q rebsd.auto_webd_port`
+dns=`/bin/kenv -q rebsd.nameservers`
+inet_ipaddr=`/bin/kenv -q pf.inet_ipaddr`
+inet_eth=`/bin/kenv -q pf.inet_eth`
+inet_gate=`/bin/kenv -q pf.inet_gate`
+inet_smask=`/bin/kenv -q pf.inet_smask`
+nxAuthID=`/bin/kenv -q rebsd.auto_pfweb_id`
+nxAuthPW=`/bin/kenv -q rebsd.auto_pfweb_pw`
+_repos=`/bin/kenv -q rebsd.auto_pf_bsd_repos`
+_reboot=`/bin/kenv -q rebsd.auto_finish_action`
+_fixrs=`/bin/kenv -q rebsd.fix_route`
+
+echo "<?xml version=\"1.0\"?>
+<pfsense>
+	<version>19.1</version>
+	<lastchange></lastchange>
+	<system>
+		<optimization>normal</optimization>
+		<hostname>${srvname}</hostname>
+		<domain>localdomain</domain>
+		<group>
+			<name>all</name>
+			<description><![CDATA[All Users]]></description>
+			<scope>system</scope>
+			<gid>1998</gid>
+		</group>
+		<group>
+			<name>admins</name>
+			<description><![CDATA[System Administrators]]></description>
+			<scope>system</scope>
+			<gid>1999</gid>
+			<member>0</member>
+			<priv>page-all</priv>
+		</group>
+		<user>
+			<name>admin</name>
+			<descr><![CDATA[System Administrator]]></descr>
+			<scope>system</scope>
+			<groupname>admins</groupname>
+			<bcrypt-hash>${rootPass}</bcrypt-hash>
+			<uid>0</uid>
+			<priv>user-shell-access</priv>
+			<expires></expires>
+			<dashboardcolumns>2</dashboardcolumns>
+			<authorizedkeys></authorizedkeys>
+			<ipsecpsk></ipsecpsk>
+			<webguicss>pfSense.css</webguicss>
+		</user>
+		<nextuid>2000</nextuid>
+		<nextgid>2000</nextgid>
+		<timeservers>0.pfsense.pool.ntp.org</timeservers>
+		<webgui>
+			<protocol>http</protocol>
+			<loginautocomplete></loginautocomplete>
+			<dashboardcolumns>2</dashboardcolumns>
+			<webguicss>pfSense.css</webguicss>
+			<logincss>1e3f75;</logincss>
+			<port>${webPort}</port>
+			<max_procs>2</max_procs>
+			<ssl-certref></ssl-certref>
+		</webgui>
+		<disablenatreflection>yes</disablenatreflection>
+		<disablesegmentationoffloading></disablesegmentationoffloading>
+		<disablelargereceiveoffloading></disablelargereceiveoffloading>
+		<ipv6allow></ipv6allow>
+		<maximumtableentries>400000</maximumtableentries>
+		<powerd_ac_mode>max</powerd_ac_mode>
+		<powerd_battery_mode>max</powerd_battery_mode>
+		<powerd_normal_mode>max</powerd_normal_mode>
+		<bogons>
+			<interval>monthly</interval>
+		</bogons>
+		<already_run_config_upgrade></already_run_config_upgrade>
+		<ssh>
+			<enable>enabled</enable>
+			<port>${sshPort}</port>
+		</ssh>
+		<language>en_US</language>
+		<timezone>Asia/Shanghai</timezone>
+		<dns1gw>none</dns1gw>
+		<dns1host></dns1host>"> /cf/conf/config.xml
+
+for n in $dns; do
+	echo "		<dnsserver>${n}</dnsserver>">> /cf/conf/config.xml
+done
+echo "		<dnsallowoverride></dnsallowoverride>
+		<dns2gw>none</dns2gw>
+		<dns2host></dns2host>
+		<disableconsolemenu></disableconsolemenu>
+		<serialspeed>115200</serialspeed>
+		<primaryconsole>serial</primaryconsole>
+		<sshguard_threshold></sshguard_threshold>
+		<sshguard_blocktime></sshguard_blocktime>
+		<sshguard_detection_time></sshguard_detection_time>
+		<sshguard_whitelist></sshguard_whitelist>
+		<disablebeep></disablebeep>
+		<use_mfs_tmp_size></use_mfs_tmp_size>
+		<use_mfs_var_size></use_mfs_var_size>
+		<sharednet></sharednet>
+		<firmware>
+			<disablecheck></disablecheck>
+		</firmware>
+		<gitsync>
+			<repositoryurl></repositoryurl>
+			<branch></branch>
+		</gitsync>
+		<pkg_repo_conf_path>/usr/local/share/pfSense/pkg/repos/pfSense-repo.conf</pkg_repo_conf_path>
+	</system>
+	<interfaces>
+		<wan>
+			<enable></enable>
+			<if>${inet_eth}</if>
+			<mtu></mtu>
+			<ipaddr>${inet_ipaddr}</ipaddr>
+			<ipaddrv6>dhcp6</ipaddrv6>
+			<subnet>${inet_smask}</subnet>
+			<gateway>GW_WAN</gateway>
+			<blockbogons></blockbogons>
+			<dhcphostname></dhcphostname>
+			<media></media>
+			<mediaopt></mediaopt>
+			<dhcp6-duid></dhcp6-duid>
+			<dhcp6-ia-pd-len>0</dhcp6-ia-pd-len>
+			<subnetv6></subnetv6>
+			<gatewayv6></gatewayv6>
+		</wan>
+	</interfaces>
+	<staticroutes></staticroutes>
+	<dhcpd></dhcpd>
+	<dhcpdv6></dhcpdv6>
+	<snmpd>
+		<syslocation></syslocation>
+		<syscontact></syscontact>
+		<rocommunity>public</rocommunity>
+	</snmpd>
+	<diag>
+		<ipv6nat></ipv6nat>
+	</diag>
+	<syslog>
+		<filterdescriptions>1</filterdescriptions>
+	</syslog>
+	<filter>
+		<rule>
+			<id></id>
+			<tracker>1573957819</tracker>
+			<type>pass</type>
+			<ipprotocol>inet</ipprotocol>
+			<tag></tag>
+			<tagged></tagged>
+			<direction>any</direction>
+			<floating>yes</floating>
+			<max></max>
+			<max-src-nodes></max-src-nodes>
+			<max-src-conn></max-src-conn>
+			<max-src-states></max-src-states>
+			<statetimeout></statetimeout>
+			<statetype><![CDATA[keep state]]></statetype>
+			<os></os>
+			<protocol>tcp</protocol>
+			<source>
+				<any></any>
+			</source>
+			<destination>
+				<any></any>
+				<port>${webPort}</port>
+			</destination>
+			<descr><![CDATA[Web]]></descr>
+		</rule>
+		<rule>
+			<id></id>
+			<tracker>1573957812</tracker>
+			<type>pass</type>
+			<ipprotocol>inet</ipprotocol>
+			<tag></tag>
+			<tagged></tagged>
+			<direction>any</direction>
+			<floating>yes</floating>
+			<max></max>
+			<max-src-nodes></max-src-nodes>
+			<max-src-conn></max-src-conn>
+			<max-src-states></max-src-states>
+			<statetimeout></statetimeout>
+			<statetype><![CDATA[keep state]]></statetype>
+			<os></os>
+			<protocol>tcp</protocol>
+			<source>
+				<any></any>
+			</source>
+			<destination>
+				<any></any>
+				<port>${sshPort}</port>
+			</destination>
+			<descr><![CDATA[SSH]]></descr>
+		</rule>
+		<rule>
+			<id></id>
+			<tracker>1573957803</tracker>
+			<type>pass</type>
+			<ipprotocol>inet</ipprotocol>
+			<tag></tag>
+			<tagged></tagged>
+			<direction>any</direction>
+			<floating>yes</floating>
+			<max></max>
+			<max-src-nodes></max-src-nodes>
+			<max-src-conn></max-src-conn>
+			<max-src-states></max-src-states>
+			<statetimeout></statetimeout>
+			<statetype><![CDATA[keep state]]></statetype>
+			<os></os>
+			<protocol>icmp</protocol>
+			<icmptype>any</icmptype>
+			<source>
+				<any></any>
+			</source>
+			<destination>
+				<any></any>
+			</destination>
+			<descr><![CDATA[ICMP]]></descr>
+		</rule>
+		<rule>
+			<type>pass</type>
+			<ipprotocol>inet</ipprotocol>
+			<descr><![CDATA[Default allow LAN to any rule]]></descr>
+			<interface>lan</interface>
+			<tracker>0100000101</tracker>
+			<source>
+				<network>lan</network>
+			</source>
+			<destination>
+				<any></any>
+			</destination>
+		</rule>
+		<rule>
+			<type>pass</type>
+			<ipprotocol>inet6</ipprotocol>
+			<descr><![CDATA[Default allow LAN IPv6 to any rule]]></descr>
+			<interface>lan</interface>
+			<tracker>0100000102</tracker>
+			<source>
+				<network>lan</network>
+			</source>
+			<destination>
+				<any></any>
+			</destination>
+		</rule>
+		<separator>
+			<floatingrules></floatingrules>
+		</separator>
+	</filter>
+	<ipsec></ipsec>
+	<aliases></aliases>
+	<proxyarp></proxyarp>
+	<cron>
+		<item>
+			<minute>1,31</minute>
+			<hour>0-5</hour>
+			<mday>*</mday>
+			<month>*</month>
+			<wday>*</wday>
+			<who>root</who>
+			<command>/usr/bin/nice -n20 adjkerntz -a</command>
+		</item>
+		<item>
+			<minute>1</minute>
+			<hour>3</hour>
+			<mday>1</mday>
+			<month>*</month>
+			<wday>*</wday>
+			<who>root</who>
+			<command>/usr/bin/nice -n20 /etc/rc.update_bogons.sh</command>
+		</item>
+		<item>
+			<minute>1</minute>
+			<hour>1</hour>
+			<mday>*</mday>
+			<month>*</month>
+			<wday>*</wday>
+			<who>root</who>
+			<command>/usr/bin/nice -n20 /etc/rc.dyndns.update</command>
+		</item>
+		<item>
+			<minute>*/60</minute>
+			<hour>*</hour>
+			<mday>*</mday>
+			<month>*</month>
+			<wday>*</wday>
+			<who>root</who>
+			<command>/usr/bin/nice -n20 /usr/local/sbin/expiretable -v -t 3600 virusprot</command>
+		</item>
+		<item>
+			<minute>30</minute>
+			<hour>12</hour>
+			<mday>*</mday>
+			<month>*</month>
+			<wday>*</wday>
+			<who>root</who>
+			<command>/usr/bin/nice -n20 /etc/rc.update_urltables</command>
+		</item>
+		<item>
+			<minute>1</minute>
+			<hour>0</hour>
+			<mday>*</mday>
+			<month>*</month>
+			<wday>*</wday>
+			<who>root</who>
+			<command>/usr/bin/nice -n20 /etc/rc.update_pkg_metadata</command>
+		</item>
+	</cron>
+	<wol></wol>
+	<rrd>
+		<enable></enable>
+	</rrd>
+	<load_balancer>
+		<monitor_type>
+			<name>ICMP</name>
+			<type>icmp</type>
+			<descr><![CDATA[ICMP]]></descr>
+			<options></options>
+		</monitor_type>
+		<monitor_type>
+			<name>TCP</name>
+			<type>tcp</type>
+			<descr><![CDATA[Generic TCP]]></descr>
+			<options></options>
+		</monitor_type>
+		<monitor_type>
+			<name>HTTP</name>
+			<type>http</type>
+			<descr><![CDATA[Generic HTTP]]></descr>
+			<options>
+				<path>/</path>
+				<host></host>
+				<code>200</code>
+			</options>
+		</monitor_type>
+		<monitor_type>
+			<name>HTTPS</name>
+			<type>https</type>
+			<descr><![CDATA[Generic HTTPS]]></descr>
+			<options>
+				<path>/</path>
+				<host></host>
+				<code>200</code>
+			</options>
+		</monitor_type>
+		<monitor_type>
+			<name>SMTP</name>
+			<type>send</type>
+			<descr><![CDATA[Generic SMTP]]></descr>
+			<options>
+				<send></send>
+				<expect>220 *</expect>
+			</options>
+		</monitor_type>
+	</load_balancer>
+	<widgets>
+		<sequence>system_information:col1:open:0,interfaces:col2:open:0</sequence>
+		<period>10</period>
+	</widgets>
+	<openvpn></openvpn>
+	<dnshaper></dnshaper>
+	<unbound>
+		<enable></enable>
+		<dnssec></dnssec>
+		<active_interface></active_interface>
+		<outgoing_interface></outgoing_interface>
+		<custom_options></custom_options>
+		<hideidentity></hideidentity>
+		<hideversion></hideversion>
+		<dnssecstripped></dnssecstripped>
+	</unbound>">> /cf/conf/config.xml
+if [ -n ${inet_gate} ];then
+echo "	<gateways>
+		<gateway_item>
+			<interface>wan</interface>
+			<gateway>${inet_gate}</gateway>
+			<name>GW_WAN</name>
+			<weight>1</weight>
+			<ipprotocol>inet</ipprotocol>
+			<descr><![CDATA[Interface wan Gateway]]></descr>
+			<monitor_disable></monitor_disable>
+			<action_disable></action_disable>">> /cf/conf/config.xml
+			[ -n "$_fixrs" ] && echo "			<nonlocalgateway></nonlocalgateway>">> /cf/conf/config.xml
+echo "		</gateway_item>
+		<defaultgw4>GW_WAN</defaultgw4>
+	</gateways>">> /cf/conf/config.xml
+#dhcp fix?
+elif [ -n "$_fixrs" ] ;then
+echo "	<gateways>
+		<gateway_item>
+			<interface>wan</interface>
+			<gateway>dynamic</gateway>
+			<name>GW_WAN</name>
+			<weight>1</weight>
+			<ipprotocol>inet</ipprotocol>
+			<descr><![CDATA[Interface wan Gateway]]></descr>
+			<monitor_disable></monitor_disable>
+			<action_disable></action_disable>
+			<nonlocalgateway></nonlocalgateway>
+		</gateway_item>
+		<defaultgw4>GW_WAN</defaultgw4>
+	</gateways>">> /cf/conf/config.xml
+fi
+echo "	<shaper></shaper>
+	<notifications>
+		<smtp>
+			<disable></disable>
+		</smtp>
+		<growl>
+			<disable></disable>
+		</growl>
+	</notifications>
+</pfsense>">> /cf/conf/config.xml
+ln -s /cf/conf /conf
+cat /dev/null> /cf/conf/assign_complete
+#echo "`date +%Y-%m-%d,%H:%m:%s`" > /cf/conf/reBSD
+cat /dev/null> /cf/conf/copynotice_display
+echo -e "\n">> /cf/conf/copynotice_version
+cat /dev/null> /cf/conf/trigger_initial_wizard
+#echo "fsck_y_enable=\"YES\"" >> /etc/defaults/rc.conf
+sed -I '' 's/\(fsck_y_enable.*\)NO/\1YES/g' /etc/defaults/rc.conf
+#nginx mod.
+echo "${nxAuthID}:$(echo ${nxAuthPW} | openssl passwd -stdin )"> /cf/conf/reBSD
+sed  -i '' '/root "{$document_root}";/a\
+		auth_basic "reBSD";\
+		auth_basic_user_file /cf/conf/reBSD;\
+' /etc/inc/system.inc
+#lrwxr-xr-x  1 root  wheel  52 Apr 22  2019 /usr/local/etc/pkg/repos/pfSense.conf -> /usr/local/share/pfSense/pkg/repos/pfSense-repo.conf
+#/usr/local/etc/pkg/repos/FreeBSD.conf
+#FreeBSD repos
+if [ -n "$_repos" ] && [ "$_repos" = "YES" ]; then
+sed -i '' -e 's/FreeBSD:.*{.*enabled:.*/FreeBSD: { enabled: yes }/g' "/usr/local/etc/pkg/repos/FreeBSD.conf"
+sed -i '' -e 's/FreeBSD:.*{.*enabled:.*/FreeBSD: { enabled: yes }/g' "/usr/local/share/pfSense/pkg/repos/pfSense-repo.conf"
+fi
+case $_reboot in
+	  reboot)
+		reboot
+		;;
+	shutdown)
+		poweroff
+		;;
+		   *)
+		/bin/kenv -v rebsd.auto_is_finish='YES'>/dev/null
+		echo "reBSD work finsh."
+		;;
+  esac

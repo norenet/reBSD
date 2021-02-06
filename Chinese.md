@@ -14,7 +14,7 @@
  5. 支持安装第三方软件(pkg)
 
 **需求**
- 1. 磁盘:20Mb
+ 1. 磁盘:24Mb
  2. 内存:32Mb
  3. 安装FreeBSD/pFsense 需要 > 256Mb的内存
  4. 安装Linux/Windows 需要 > 512Mb的内存

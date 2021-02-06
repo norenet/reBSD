@@ -77,11 +77,11 @@
 
 ## reBSD 许可
 **可以在以下位置查阅reBSD开源组件许可证:**
-BSD         : http://opensource.org/licenses/bsd-license.html
-LGPL v2.1   : http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
-GPL v2      : http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
-GPL v3      : http://www.gnu.org/copyleft/gpl.html
-zlib/libpng : http://opensource.org/licenses/zlib-license.html
+- BSD         : http://opensource.org/licenses/bsd-license.html
+- LGPL v2.1   : http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+- GPL v2      : http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+- GPL v3      : http://www.gnu.org/copyleft/gpl.html
+- zlib        : http://opensource.org/licenses/zlib-license.html
 
 **可以在以下位置查阅reBSD所使用的开源组件:**
 *包含:*

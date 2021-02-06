@@ -42,7 +42,7 @@
  1.  pfSense(2.4.4-p3)
  2. pfSense(2.4.5-p1)
  - **ALOHA**
-1. ALOHA Public (11.5)
+1. ALOHA Public (latest)
  - **Windows**
  1.  Server-2003-R2(X86-Ent)
  2. Windows-XP-SP3(X86-Pro)

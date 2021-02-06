@@ -1,3 +1,8 @@
+## **预览**
+**Shell**
+![Shell](https://github.com/norenet/reBSD/blob/master/shell.gif)
+**reBSD**
+![reBSD](https://github.com/norenet/reBSD/blob/master/reBSD.gif)
 
 
 ## **什么是reBSD?**

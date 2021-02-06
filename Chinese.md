@@ -8,7 +8,7 @@
 
 **特点?**
  1. 全自动化安装操作系统,全程无需noVNC或者ipmi的支持.
- 2. 兼容专用服务器/KVM/XEN,支持UEFI
+ 2. 兼容专用服务器/KVM/XEN/vmware/Hyper-V,支持UEFI
  3. 可视化的操作系统安装过程
  4. 第三方救援系统,reBSD支持ext2/3/4,xfs,ntfs等一系列磁盘格式.
  5. 功能齐全的备用系统,reBSD包含了日常维护的功能.
@@ -63,8 +63,8 @@
  1. reBSD最终发行的是iso文件,它需要grub2,如果你原有操作系统grub版本过低,请手动升级.
  2. 通过reBSD安装任意操作系统会覆盖原有的数据,请注意备份你的数据!
  3. 目前通过测试的操作系统: Ubuntu > 18.4 / FreeBSD > 11 / Windows > 7
- 4. 目前通过测试的云平台: KVM / XEN
-
+ 4. 目前通过测试的云平台: KVM / XEN / vmware / Hyper-V
+ 
 **
 
 ## reBSD的参数/API

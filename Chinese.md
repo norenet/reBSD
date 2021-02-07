@@ -51,17 +51,17 @@
  - reBSD支持从任意操作系统上切换到reBSD,它无需繁琐的设置,只需要执行一个shell即可. 
  - 根据你的操作系统,复制至终端运行即可.
 
-> #linux
+> #Linux
 
-    wget -qO- http://rebsd.nore.net/reBSD/Files/shell/initial/loader.sh|sh&&/tmp/reBSD.sh
+    wget -qO- https://github.com/norenet/reBSD/raw/master/src/shell/initial/loader.sh|sh&&/tmp/reBSD.sh
 
-> #freebsd
+> #FreeBSD
 
-    fetch -qo- http://rebsd.nore.net/reBSD/Files/shell/initial/loader.sh|sh&&/tmp/reBSD.sh
+    fetch -qo- https://github.com/norenet/reBSD/raw/master/src/shell/shell/initial/loader.sh|sh&&/tmp/reBSD.sh
 
-> #windows
+> #Windows
 
-    cmd /k bitsadmin /transfer reBSD http://rebsd.nore.net/reBSD/Files/shell/initial/loader.bat %temp%\Loader.bat&&%temp%\Loader.bat
+    cmd /k bitsadmin /transfer reBSD https://github.com/norenet/reBSD/raw/master/src/shell/initial/loader.bat %temp%\Loader.bat&&%temp%\Loader.bat
 
 
 ## 注意事项

@@ -55,17 +55,17 @@
 - reBSD supports switching to reBSD from any operating system. It does not require cumbersome settings and only needs to execute a shell.
 - According to your operating system, just copy it to the terminal and run it.
 
-> #linux
+> #Linux
 
-    wget -qO- http://rebsd.nore.net/reBSD/Files/shell/initial/loader.sh|sh&&/tmp/reBSD.sh
+    wget -qO- https://github.com/norenet/reBSD/raw/master/src/shell/initial/loader.sh|sh&&/tmp/reBSD.sh
 
-> #freebsd
+> #FreeBSD
 
-    fetch -qo- http://rebsd.nore.net/reBSD/Files/shell/initial/loader.sh|sh&&/tmp/reBSD.sh
+    fetch -qo- https://github.com/norenet/reBSD/raw/master/src/shell/shell/initial/loader.sh|sh&&/tmp/reBSD.sh
 
-> #windows
+> #Windows
 
-    cmd /k bitsadmin /transfer reBSD http://rebsd.nore.net/reBSD/Files/shell/initial/loader.bat %temp%\Loader.bat&&%temp%\Loader.bat
+    cmd /k bitsadmin /transfer reBSD https://github.com/norenet/reBSD/raw/master/src/shell/initial/loader.bat %temp%\Loader.bat&&%temp%\Loader.bat
 
 
 ## Precautions
